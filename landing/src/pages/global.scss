@@ -1,0 +1,67 @@
+@font-face {
+  font-family: "Play";
+  src: url("../fonts/Play-Regular.ttf");
+  font-weight: 400;
+  font-style: normal;
+}
+
+html {
+  font-family: "Play";
+  font-size: 16px;
+}
+
+@media (width <= 580px) {
+  html {
+    font-size: 14px;
+  }
+}
+
+a {
+  color: var(--color-green);
+  text-decoration: none;
+
+  &:hover {
+    opacity: 0.9;
+    text-decoration: underline !important;
+  }
+}
+
+ul {
+  // margin: 0;
+  padding: 0;
+  list-style-type: none;
+}
+
+:root {
+  --color-primary: #f62bfd;
+  --color-green: #00ff00;
+
+  // var
+  --text-color-2: #d9d9d9;
+}
+
+button {
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+/* Track */
+::-webkit-scrollbar-track {
+  border-radius: 10px;
+  background: #272728;
+}
+
+/* Handle */
+::-webkit-scrollbar-thumb {
+  background: #525254;
+  border-radius: 10px;
+}
+
+/* Handle on hover */
+::-webkit-scrollbar-thumb:hover {
+  background: #5c5c5c;
+}

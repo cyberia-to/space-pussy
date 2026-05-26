@@ -1,0 +1,37 @@
+.wrapper {
+  position: relative;
+  margin-top: 10px;
+
+  $radius: 7px;
+
+  progress {
+    height: 32px;
+    appearance: none;
+    background-color: #353535;
+    width: 100%;
+
+    border-radius: $radius;
+
+    &::-webkit-progress-bar {
+      background-color: #353535;
+      border-radius: $radius;
+    }
+
+    &::-webkit-progress-value {
+      // background-color: var(--color-primary);
+
+      box-shadow: 0 0 10px 2px #fb7cff;
+      background-color: #fb7cff;
+      border-radius: $radius;
+    }
+  }
+}
+
+.labels {
+  display: flex;
+  justify-content: space-between;
+  position: absolute;
+  top: 7px;
+  left: 2%;
+  right: 2%;
+}

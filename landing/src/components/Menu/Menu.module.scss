@@ -1,0 +1,42 @@
+.wrapper {
+  display: inline-block;
+  ul {
+    max-width: 160px;
+    li + li {
+      margin-top: 18px;
+    }
+    a {
+      color: #d9d9d9;
+
+      &:hover {
+        text-decoration: unset !important;
+      }
+
+      display: inline-flex;
+      gap: 0 10px;
+      align-items: center;
+
+      img,
+      span {
+        width: 20px;
+      }
+
+      img {
+        height: auto;
+      }
+
+      span:last-of-type {
+        &:hover {
+          text-decoration: underline;
+          color: #00ff00;
+        }
+      }
+    }
+
+    font-size: 14px;
+  }
+}
+
+.active {
+  color: #00ff00 !important;
+}

@@ -1,0 +1,11 @@
+.item {
+  color: #d500f9;
+}
+
+a.item {
+  &:hover {
+    color: #d500f9;
+    // color: red !important;
+    text-decoration: underline;
+  }
+}
