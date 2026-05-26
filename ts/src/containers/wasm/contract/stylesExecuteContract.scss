@@ -1,0 +1,22 @@
+@import '../globalStyle.scss';
+
+.containerExecuteContract {
+  @include displayFlexGap;
+  &InputContainer {
+    @include border-card;
+    @include displayFlexGap;
+    &Item {
+      display: grid;
+      grid-template-columns: 80px 1fr;
+
+      span {
+        line-height: 42px;
+      }
+    }
+  }
+
+  &Result {
+    @include border-card;
+    @include displayFlexGap;
+  }
+}

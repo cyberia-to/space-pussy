@@ -1,0 +1,18 @@
+.wrapper {
+  footer {
+    a {
+      position: fixed;
+      z-index: 2;
+      right: 5vw;
+      bottom: 35px;
+      display: flex;
+      align-items: center;
+    }
+  }
+}
+
+.senseBtn {
+  position: fixed;
+  top: 45%;
+  z-index: 3;
+}
