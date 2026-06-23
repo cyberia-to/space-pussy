@@ -4,31 +4,35 @@
 binpaths="/usr/local/bin /usr/bin"
 libpaths="/usr/lib /usr/local/lib"
 
-
 # This variable contains a nonzero length string in case the script fails
 # because of missing write permissions.
 is_write_perm_missing=""
+
+# Get the latest release from GitHub API
+latest_release=$(curl -s https://api.github.com/repos/greatweb/space-pussy/releases/latest)
+latest_tag=$(echo "$latest_release" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
 # Download and install space-pussy from GitHub
 PLATFORM=$(uname)
 case "$PLATFORM" in
   "Darwin"|"Linux")
-    wget https://github.com/greatweb/space-pussy/archive/refs/tags/v0.0.3.zip
-    unzip v0.0.3.zip
-    cd space-pussy-0.0.3/
+    wget https://github.com/greatweb/space-pussy/archive/refs/tags/$latest_tag.zip
+    unzip $latest_tag.zip
+    cd space-pussy-${latest_tag#v}
     make build
     for binpath in $binpaths; do
       if cp build/pussy "$binpath"; then
         echo "Moved pussy to $binpath"
         echo "Enjoy your space-pussy experience!"
-        rm ~/v0.0.3.zip
-        rm -rf ~/space-pussy-0.0.3
+        rm ~/$latest_tag.zip
+        rm -rf ~/space-pussy-${latest_tag#v}
+        pussy --help
         exit 0
       else
         if [ -d "$binpath" ] && [ ! -w "$binpath" ]; then
           is_write_perm_missing=1
-          rm ~/v0.0.3.zip
-          rm -rf ~/space-pussy-0.0.3
+          rm ~$latest_tag.zip
+          rm -rf ~/space-pussy-${latest_tag#v}
         fi
       fi
     done
