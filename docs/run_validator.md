@@ -375,7 +375,7 @@ To declare a validator candidate, run the following command adjusting the stake 
 
 ```bash
 docker exec -ti space-pussy pussy tx staking create-validator \
-  --amount=10000000boot \
+  --amount=10000000pussy \
   --min-self-delegation "1000000" \
   --pubkey=$(docker exec -ti space-pussy pussy tendermint show-validator) \
   --moniker=<your_node_nickname> \
