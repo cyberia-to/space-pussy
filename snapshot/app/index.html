@@ -245,7 +245,7 @@ async function fromLedger(){
   const Cosmos=(await import("https://cdn.jsdelivr.net/npm/@ledgerhq/hw-app-cosmos@6.30.0/+esm")).default;
   const transport=await tp.create();
   const app=new Cosmos(transport);
-  const {address}=await app.getAddress("m/44'/118'/0'/0/0","bostrom");
+  const {address}=await app.getAddress("m/44'/118'/0'/0/0","pussy");
   return address;
 }
 
