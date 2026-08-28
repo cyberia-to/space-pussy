@@ -1,0 +1,71 @@
+{
+ "chain": "space-pussy",
+ "halt_height": 19940993,
+ "halt_time": "2026-06-14T08:36:41Z",
+ "extracted": "2026-08-28",
+ "gateway": "https://gateway.pinata.cloud/ipfs",
+ "site": "https://pussy.bostrom.network",
+ "supply_audit": {
+  "native_pussy_at_halt": 1099389810279114036,
+  "ibc_escrow_pussy": {
+   "total": 5389836483227616,
+   "note": "nearly all on channel-0 to bostrom"
+  },
+  "minted_for_swap": 52685989888822264,
+  "total_post_swap_pussy": 1152075800167936256,
+  "mint_ratio_pct": 4.8,
+  "method": "sum over every non-pussy denom with a warp quote: supply x rate_in_pussy; pool coins excluded; liquidpussy-routed when no direct pussy pool; dust pools below 1e6 micro-units do not quote"
+ },
+ "files": {
+  "balances.csv": {
+   "cid": "QmPZJtShm1tQzzYc6aJMBFcV1YHoCxiKs5r29DVH5UF7Pc",
+   "sha256": "c1480c8238f43e3b10b4f2c107b350d2304f9043e7d261962642c3f05fa6b665",
+   "bytes": 117927
+  },
+  "delegations.csv": {
+   "cid": "QmZFu4fvS7BDr6Ny4FvJz4VpyjwWvVV2LgP6uLXWCq3dgw",
+   "sha256": "fee04e61a8873e37857ad33622accf51c4eaec68a3c73713d6b4598224507c83",
+   "bytes": 123154
+  },
+  "holdings.jsonl": {
+   "cid": "QmcxDahwm8hSwZdp8gBWhnBZx8BRBXKyaNkdviiynaFeYi",
+   "sha256": "4bd8edef6aa11b1fb7b50fb5750c3be91730906fc0bbe18d0964bfa56be95d8f",
+   "bytes": 209549
+  },
+  "passports.jsonl": {
+   "cid": "QmTvMKGSjB44arkBNwc8qdBWCEScj1PHCg4c4y2nj8r8nx",
+   "sha256": "0a1661924a5a821efc6f8b0463b0b1c7b3952ac46992bdce7355f459c286e443",
+   "bytes": 235
+  },
+  "passports_by_owner.json": {
+   "cid": "QmeySKGA4SAR9UDkpyv4dMZ5zC8STQqGuPSAd6Cdcrr6kc",
+   "sha256": "7a4b9bde65ee05f05428df5656076288696629b1e2b8c344d99e6607022c3de8",
+   "bytes": 68
+  },
+  "pools.json": {
+   "cid": "Qmb5gLZEx12vC6W4PkRR5PwnCp38t2GmzLpHZuQ272qo91",
+   "sha256": "2a562e1d6511f5d0e753f93bf062cbcb7d14eac7ba6df804dac92bd48c16ff42",
+   "bytes": 12228
+  },
+  "prices.json": {
+   "cid": "QmR2hWtY2mYx27eAHeB1TdebDhSTU3h7s3WWN6gVCFb3e3",
+   "sha256": "2f1c28c213fd4edcdb65e246ef89a5dadc26f5035955066e2434f01889897e15",
+   "bytes": 5673
+  },
+  "pubkeys.csv": {
+   "cid": "QmSHTTz46f87KYjY936SLwjdkExD1WN2QFKLnJ8bu6ANvz",
+   "sha256": "35713ae975863220db4a9142952653b12d34b848d50cd66abe31fd9e11952376",
+   "bytes": 60464
+  },
+  "supply.json": {
+   "cid": "QmXPkBWZ6XkhQJxrFAfMVYnGDf4BL3Z67r1ceSPFCsaGhA",
+   "sha256": "806539b643a95f93dd2edfa85303cf5bcfd3cbf4b244694f5890e1fb315ce453",
+   "bytes": 3862
+  },
+  "validators.json": {
+   "cid": "QmXK1mnpfo9o637YdthorAqtMPjcM1wBRorBYtUhnNzmZ4",
+   "sha256": "20d6de357b858ec5537620c244c0387cca1ddcfb5bad403a429ca16de5679f51",
+   "bytes": 45157
+  }
+ }
+}

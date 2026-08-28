@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<link rel="icon" type="image/png" href="/favicon.png"/>
+<title>space-pussy — final snapshot</title>
+<meta property="og:type" content="website"/>
+<meta property="og:url" content="https://pussy.bostrom.network"/>
+<meta property="og:title" content="space-pussy — final snapshot"/>
+<meta property="og:description" content="the bootloader chain is laid to rest. check any balance by passport name, address, mnemonic or ledger — all onchain tokens will be swapped to BOOT at warp price at halt."/>
+<meta name="twitter:card" content="summary"/>
+<meta name="twitter:site" content="@cyber_devs"/>
+<meta name="description" content="the final snapshot of the bostrom bootloader chain: every dataset content-addressed on IPFS, balance checker, swap value in BOOT at warp prices at halt."/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Play:wght@400;700&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+  :root{--bg:#000;--s1:#0b0b0b;--s2:#141414;--ln:#222;--tx:#e8e8e8;--mut:#948b91;--grn:#ff2d92;--cyan:#38bdf8;--amb:#eab308;--red:#e8262e}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:'Play',system-ui,-apple-system,sans-serif;line-height:1.6}
+  nav{position:sticky;top:0;z-index:10;background:rgba(0,0,0,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--ln)}
+  .navin{max-width:920px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;justify-content:space-between;gap:18px}
+  .brand{font-family:'Orbitron',sans-serif;font-weight:900;font-size:17px;letter-spacing:1px;color:var(--tx);text-decoration:none;display:flex;align-items:center;gap:8px}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--grn);box-shadow:0 0 8px var(--grn)}
+  .menu{display:flex;align-items:center;gap:26px;font-family:'Orbitron',sans-serif;font-weight:500;font-size:14px}
+  .menu>a,.eco>span{color:#b9c2bb;text-decoration:none;cursor:pointer;letter-spacing:.5px}
+  .menu>a:hover,.eco:hover>span{color:var(--grn)}
+  .eco{position:relative}
+  .eco .dd{display:none;position:absolute;right:0;top:26px;background:var(--s1);border:1px solid var(--ln);border-radius:10px;padding:8px 0;min-width:190px}
+  .eco:hover .dd{display:block}
+  .eco .dd a{display:block;padding:8px 18px;color:var(--tx);text-decoration:none;font-family:'Play',sans-serif;font-size:14px}
+  .eco .dd a:hover{background:rgba(34,197,94,.10);color:var(--grn)}
+  .wrap{max-width:920px;margin:0 auto;padding:32px 20px 80px}
+  h1{font-family:'Orbitron',sans-serif;font-size:26px;margin:0 0 4px;font-weight:900;letter-spacing:1px}
+  .sub{color:var(--mut);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;margin-bottom:28px}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:2px;color:var(--grn);margin:36px 0 12px;font-family:'JetBrains Mono',ui-monospace,monospace}
+  .epitaph{background:var(--s1);border:1px solid var(--ln);border-left:3px solid var(--grn);border-radius:8px;padding:14px 16px;color:var(--mut);font-size:14px;margin-bottom:12px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--ln);vertical-align:top}
+  th{color:var(--mut);font-weight:600;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+  td a{color:var(--cyan);text-decoration:none}
+  td a:hover{text-decoration:underline}
+  .file{font-family:'JetBrains Mono',ui-monospace,monospace;color:var(--tx)}
+  .desc{color:var(--mut)}
+  .sz{color:var(--mut);font-family:'JetBrains Mono',ui-monospace,monospace;white-space:nowrap}
+  .cid{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;color:var(--mut);word-break:break-all}
+  td .ipfs{color:var(--mut);font-size:11px;margin-left:10px}
+  .card{background:var(--s1);border:1px solid var(--ln);border-radius:10px;padding:18px}
+  .tabs{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .tab{background:var(--s2);border:1px solid var(--ln);border-radius:20px;padding:6px 15px;cursor:pointer;font-size:13px;color:var(--mut)}
+  .tab.on{background:rgba(34,197,94,.12);border-color:var(--grn);color:var(--grn)}
+  input,textarea{width:100%;background:var(--bg);border:1px solid var(--ln);border-radius:8px;color:var(--tx);padding:11px 12px;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px}
+  textarea{min-height:70px;resize:vertical}
+  button{background:var(--grn);color:#000;border:none;border-radius:8px;padding:11px 20px;font-weight:700;cursor:pointer;font-size:14px;margin-top:12px}
+  button:hover{filter:brightness(1.1)}
+  button.ghost{background:var(--s2);color:var(--tx);border:1px solid var(--ln)}
+  .hint{color:var(--mut);font-size:12px;margin-top:8px;font-family:'JetBrains Mono',ui-monospace,monospace}
+  .addr{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:12px;color:var(--cyan);word-break:break-all;margin:12px 0}
+  .bal{margin-top:14px;font-family:'JetBrains Mono',ui-monospace,monospace}
+  .bal .tok{margin-bottom:6px}
+  .bal .row,.bal .sub,.bal .cols{display:grid;grid-template-columns:minmax(120px,1fr) minmax(170px,auto) minmax(150px,190px);column-gap:16px;align-items:baseline}
+  .bal .row{padding:8px 0 4px;border-bottom:1px solid var(--ln);font-size:15px}
+  .bal .row .d{color:var(--grn);font-weight:700}
+  .bal .amt{text-align:right;font-weight:700}
+  .bal .est{text-align:right;color:var(--mut);font-weight:400;font-size:12px}
+  .bal .sub{padding:2px 0;font-size:12px;color:var(--mut)}
+  .bal .sub .lbl{padding-left:18px}
+  .bal .sub .amt,.bal .sub .est{font-weight:400}
+  .bal .cols{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);padding-bottom:4px}
+  .bal .cols span{text-align:right}
+  .bal .cols .lbl{text-align:left}
+  .bal .grand{border-bottom:none;border-top:2px solid var(--ln);margin-top:8px;padding-top:10px}
+  .bal .grand .est{color:var(--grn);font-weight:700;font-size:15px}
+  .hero.cyb{color:var(--cyan)}
+  .hero{margin:18px 0 4px;text-align:center;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:32px;font-weight:700;color:var(--grn);letter-spacing:-.5px;word-break:break-all}
+  .hero .unit{font-size:18px;color:var(--tx);font-weight:700;margin-left:6px}
+  .hero-sub{text-align:center;color:var(--mut);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:11px;text-transform:uppercase;letter-spacing:2px;margin-bottom:18px}
+  .passline{text-align:center;color:var(--mut);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;margin:-6px 0 18px}
+  .passline b{color:var(--tx);font-weight:700}
+  .err{color:var(--red);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;margin-top:10px}
+  .foot{margin-top:40px;color:var(--mut);font-size:12px;font-family:'JetBrains Mono',ui-monospace,monospace}
+  .foot a{color:var(--cyan);text-decoration:none}
+</style>
+</head>
+<body>
+<nav><div class="navin">
+  <a class="brand" href="/"><span class="dot"></span>SPACE-PUSSY</a>
+  <div class="menu">
+    <a href="#balance">Balance</a>
+    <div class="eco"><span>Ecosystem ▾</span>
+      <div class="dd">
+        <a href="https://cyber.page" target="_blank" rel="noopener">cyber.page</a>
+        <a href="https://www.coingecko.com/en/coins/bostrom" target="_blank" rel="noopener">CoinGecko</a>
+        <a href="https://coinmarketcap.com/currencies/bostrom/" target="_blank" rel="noopener">CoinMarketCap</a>
+        <a href="https://www.coinbase.com/price/bostrom" target="_blank" rel="noopener">Coinbase</a>
+        <a href="https://t.me/cyber" target="_blank" rel="noopener">Telegram</a>
+        <a href="https://x.com/cyber_devs" target="_blank" rel="noopener">X</a>
+      </div>
+    </div>
+    <a href="https://cyber.page/bootloader/space-pussy" target="_blank" rel="noopener">Docs</a>
+    <a href="https://cyb.ai" target="_blank" rel="noopener">Robot</a>
+  </div>
+</div></nav>
+<div class="wrap">
+  <h1>🐈 space-pussy — final snapshot</h1>
+  <div class="sub">halted at height 19,940,993 · 2026-06-14 08:36 UTC · the cat sleeps</div>
+
+  <div class="epitaph">
+    the space-pussy chain — bostrom's playful sibling — ran from 2022 and grew 32,682 particles,
+    48,370 cyberlinks, 616 accounts and 52 validators. the chain is laid to rest with the bootloader.
+    <b>all onchain tokens will be swapped at warp prices at halt</b>.<br/><br/>
+    supply audit: native supply at halt — <b>1,099,389,810,279,114,036 PUSSY</b>,
+    of which <b>5,389,836,483,227,616</b> sit in IBC escrows (nearly all on channel-0 to bostrom);
+    swapping every other onchain token at warp prices mints <b>52,685,989,888,822,264</b> more
+    (+4.8%, mostly LP, V and A) — final total supply <b>1,152,075,800,167,936,256 PUSSY</b>.<br/><br/>
+    every dataset below is content-addressed on IPFS — pinned to Pinata — so this record
+    outlives every server.
+  </div>
+
+  <h2 id="balance">balance checker</h2>
+  <div class="card">
+    <div class="tabs">
+      <div class="tab on" data-m="name">name</div>
+      <div class="tab" data-m="addr">address</div>
+      <div class="tab" data-m="mnem">mnemonic</div>
+      <div class="tab" data-m="priv">private key</div>
+      <div class="tab" data-m="ledger">ledger</div>
+    </div>
+    <div id="in-name"><input id="pname" placeholder="passport name" autocomplete="off"/></div>
+    <div id="in-addr" style="display:none"><input id="addr" placeholder="pussy1..." autocomplete="off"/></div>
+    <div id="in-mnem" style="display:none"><textarea id="mnem" placeholder="twelve or twenty-four words — derived locally, never sent anywhere"></textarea></div>
+    <div id="in-priv" style="display:none"><input id="priv" placeholder="private key hex (64 chars) — derived locally"/></div>
+    <div id="in-ledger" style="display:none"><div class="hint">connect a Ledger with the Cosmos app open, then check.</div></div>
+    <button id="go">check balance</button>
+    <button id="clr" class="ghost">clear</button>
+    <div class="addr" id="derived"></div>
+    <div class="bal" id="bal"></div>
+    <div class="err" id="err"></div>
+    <div class="hint">the chain is dead — balances are read from the snapshot above, in your browser. keys never leave this page.</div>
+  </div>
+
+  <h2>datasets</h2>
+  <table id="files"><thead><tr><th>file</th><th>what</th><th>size</th><th>download</th></tr></thead><tbody></tbody></table>
+  <div class="hint" id="verify"></div>
+
+  <div class="foot">
+    reproduce every file from the node:
+    <a href="https://github.com/cyberia-to/space-pussy/tree/main/snapshot">github.com/cyberia-to/space-pussy/snapshot</a><br/>
+    manifest (sha256 of every file): <span id="manlink"></span>
+  </div>
+</div>
+
+<script type="module">
+const GW = "https://gateway.pinata.cloud/ipfs";
+const CIDS = {
+ "supply.json":"QmXPkBWZ6XkhQJxrFAfMVYnGDf4BL3Z67r1ceSPFCsaGhA",
+ "pubkeys.csv":"QmSHTTz46f87KYjY936SLwjdkExD1WN2QFKLnJ8bu6ANvz",
+ "balances.csv":"QmPZJtShm1tQzzYc6aJMBFcV1YHoCxiKs5r29DVH5UF7Pc",
+ "validators.json":"QmXK1mnpfo9o637YdthorAqtMPjcM1wBRorBYtUhnNzmZ4",
+ "delegations.csv":"QmZFu4fvS7BDr6Ny4FvJz4VpyjwWvVV2LgP6uLXWCq3dgw",
+ "pools.json":"Qmb5gLZEx12vC6W4PkRR5PwnCp38t2GmzLpHZuQ272qo91",
+ "passports.jsonl":"QmTvMKGSjB44arkBNwc8qdBWCEScj1PHCg4c4y2nj8r8nx",
+ "passports_by_owner.json":"QmeySKGA4SAR9UDkpyv4dMZ5zC8STQqGuPSAd6Cdcrr6kc",
+ "holdings.jsonl":"QmcxDahwm8hSwZdp8gBWhnBZx8BRBXKyaNkdviiynaFeYi",
+ "prices.json":"QmR2hWtY2mYx27eAHeB1TdebDhSTU3h7s3WWN6gVCFb3e3",
+};
+const DESC = {
+ "holdings.jsonl":"per-account breakdown: liquid · delegated · per-pool (LP decomposed into underlying tokens)",
+ "prices.json":"pussy rate per denom from snapshot pool reserves + pool compositions",
+ "balances.csv":"every account, every denom — liquid bank balances",
+ "passports_by_owner.json":"owner address → passport nicknames",
+ "passports.jsonl":"moon passports: nickname · owner",
+ "pools.json":"26 warp pools: reserves at halt",
+ "delegations.csv":"delegator · validator · shares · pussy",
+ "validators.json":"validator set with metadata",
+ "pubkeys.csv":"616 account public keys (for future claims)",
+ "supply.json":"total supply per denom",
+};
+// same-origin file if present (fast), IPFS gateway as the permanent link
+const V="5"; // bump to bust browser caches when data format changes
+const ipfsUrl = f => `${GW}/${CIDS[f]}/${f}`;
+const localUrl = f => `./${f}?v=${V}`;
+// balances/manifest are read from same-origin first, IPFS fallback
+async function fetchData(f){
+  try{const r=await fetch(localUrl(f));if(r.ok)return r;}catch(e){}
+  return fetch(ipfsUrl(f));
+}
+
+// dataset table
+const order=["holdings.jsonl","prices.json","balances.csv","passports.jsonl","passports_by_owner.json","pools.json","delegations.csv","validators.json","pubkeys.csv","supply.json"];
+let man={};
+render();
+fetchData("manifest.json").then(r=>r.json()).then(m=>{man=m.files||{};render();}).catch(()=>{});
+function fmt(b){if(!b)return"";const u=["B","KB","MB","GB"];let i=0;while(b>1024&&i<3){b/=1024;i++}return b.toFixed(b<10&&i>0?1:0)+u[i]}
+function render(){
+  const tb=document.querySelector("#files tbody");
+  tb.innerHTML=order.map(f=>{
+    const sz=man[f]?fmt(man[f].bytes):"";
+    return `<tr><td class="file">${f}</td><td class="desc">${DESC[f]||""}</td><td class="sz">${sz}</td><td><a href="${localUrl(f)}" download>download ↓</a><a class="ipfs" href="${ipfsUrl(f)}" title="permanent IPFS copy">ipfs</a></td></tr>`;
+  }).join("");
+  document.querySelector("#manlink").innerHTML=`<a href="${ipfsUrl("manifest.json")}">${CIDS["manifest.json"]}</a>`;
+  document.querySelector("#verify").textContent="each link is <CID>/<filename> on any IPFS gateway — swap gateway.pinata.cloud for ipfs.io or your own node.";
+}
+
+// tabs
+let mode="name";
+document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{
+  mode=t.dataset.m;
+  document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x===t));
+  ["name","addr","mnem","priv","ledger"].forEach(m=>document.getElementById("in-"+m).style.display=m===mode?"block":"none");
+  document.getElementById("derived").textContent="";document.getElementById("bal").innerHTML="";document.getElementById("err").textContent="";
+});
+["pname","addr","priv"].forEach(id=>{const e=document.getElementById(id);if(e)e.addEventListener("keydown",ev=>{if(ev.key==="Enter")document.getElementById("go").click();});});
+document.getElementById("clr").onclick=()=>{["pname","addr","mnem","priv"].forEach(id=>{const e=document.getElementById(id);if(e)e.value=""});document.getElementById("derived").textContent="";document.getElementById("bal").innerHTML="";document.getElementById("err").textContent="";};
+
+// pure browser-ESM crypto: noble + scure (no Node deps, derived locally)
+let LIB=null;
+async function libs(){
+  if(LIB)return LIB;
+  // self-hosted bundle (scure bip39/bip32, noble curves/hashes, scure base):
+  // the key path never touches a CDN.
+  const v=await import(`./vendor.js?v=${V}`);
+  LIB={bip39:v.bip39,bip32:v.bip32,secp:v.secp,sha:v.sha,rip:v.rip,base:v.base};
+  return LIB;
+}
+async function addrOf(compressedPub){
+  const {sha,rip,base}=await libs();
+  const h=rip.ripemd160(sha.sha256(compressedPub));
+  return base.bech32.encode("pussy", base.bech32.toWords(h));
+}
+async function fromMnemonic(m){
+  const {bip39,bip32,secp}=await libs();
+  const seed=await bip39.mnemonicToSeed(m.trim().replace(/\s+/g," "));
+  const hd=bip32.HDKey.fromMasterSeed(seed).derive("m/44'/118'/0'/0/0");
+  return addrOf(secp.secp256k1.getPublicKey(hd.privateKey, true));
+}
+async function fromPriv(hex){
+  const {secp,base}=await libs();
+  const pk=base.hex.decode(hex.trim().replace(/^0x/,"").toLowerCase());
+  return addrOf(secp.secp256k1.getPublicKey(pk, true));
+}
+async function fromLedger(){
+  const tp=(await import("https://cdn.jsdelivr.net/npm/@ledgerhq/hw-transport-webusb@6.28.1/+esm")).default;
+  const Cosmos=(await import("https://cdn.jsdelivr.net/npm/@ledgerhq/hw-app-cosmos@6.30.0/+esm")).default;
+  const transport=await tp.create();
+  const app=new Cosmos(transport);
+  const {address}=await app.getAddress("m/44'/118'/0'/0/0","bostrom");
+  return address;
+}
+
+// holdings index (lazy): address -> { denom: {label,liquid,delegated,undelegating,pools:{id:amt},total} }
+// prices.json: rates (denom -> boot per micro-unit) + pool compositions.
+let HOLD=null,PRICES=null,PASS=null,NICK=null;
+async function loadHoldings(){
+  if(HOLD)return HOLD;
+  const [txt,pr,ps]=await Promise.all([
+    fetchData("holdings.jsonl").then(r=>r.text()),
+    fetchData("prices.json").then(r=>r.json()).catch(()=>null),
+    fetchData("passports_by_owner.json").then(r=>r.json()).catch(()=>null),
+  ]);
+  PRICES=pr;PASS=ps;
+  HOLD={};
+  for(const line of txt.split("\n")){
+    if(!line.trim())continue;
+    const r=JSON.parse(line);
+    HOLD[r.address]=r.holdings;
+  }
+  return HOLD;
+}
+const N=x=>Number(x).toLocaleString();
+const NB=x=>Number(Math.round(x)).toLocaleString();
+const ORD={PUSSY:0,LP:1,A:2,V:3,BOOT:4,TOCYB:5};
+// boot value of `amt` of denom label L — 0-rate denoms show as "–"
+function bootVal(rateKey,amt){
+  const r=PRICES&&PRICES.rates&&PRICES.rates[rateKey];
+  return r?amt*r:null;
+}
+const poolName=id=>{
+  const p=PRICES&&PRICES.pools&&PRICES.pools[id];
+  return p?`pool ${id} · ${p.labels.join("/")}`:`pool ${id}`;
+};
+
+document.getElementById("go").onclick=async()=>{
+  const err=document.getElementById("err"),der=document.getElementById("derived"),bal=document.getElementById("bal");
+  err.textContent="";bal.innerHTML="";der.textContent="deriving…";
+  try{
+    let addr;
+    if(mode==="name"){
+      const q=document.getElementById("pname").value.trim().toLowerCase();
+      if(!q){der.textContent="";err.textContent="enter a passport name";return;}
+      der.textContent="looking up…";
+      await loadHoldings(); // brings PASS along
+      if(!NICK){
+        NICK={};
+        for(const o in (PASS||{})) for(const n of PASS[o]) NICK[n.toLowerCase()]=o;
+      }
+      addr=NICK[q];
+      if(!addr){der.textContent="";err.textContent=`passport "${q}" not found in the snapshot`;return;}
+    }
+    else if(mode==="addr") addr=document.getElementById("addr").value.trim();
+    else if(mode==="mnem") addr=await fromMnemonic(document.getElementById("mnem").value);
+    else if(mode==="priv") addr=await fromPriv(document.getElementById("priv").value);
+    else if(mode==="ledger") addr=await fromLedger();
+    if(!addr||!addr.startsWith("pussy1")){der.textContent="";err.textContent="not a pussy address";return;}
+    der.textContent=addr;
+    bal.innerHTML='<div class="hint">loading snapshot holdings…</div>';
+    const H=await loadHoldings();
+    const rec=H[addr];
+    if(!rec){bal.innerHTML='<div class="hint">no holdings for this address in the snapshot.</div>';return;}
+    // merge denoms by label (ibc routes of one token collapse); boot value
+    // is priced per underlying denom BEFORE the merge, so a dust route can
+    // never lend its rate to the whole token.
+    const rate=d=>{const r=PRICES&&PRICES.rates&&PRICES.rates[d];return r>0?r:null;};
+    const tok={};
+    for(const d in rec){
+      const h=rec[d], L=h.label;
+      const t=tok[L]||(tok[L]={rate:null,liquid:0,delegated:0,undelegating:0,pools:{},total:0,boot:0,priced:true});
+      for(const k of["liquid","delegated","undelegating","total"]) t[k]+=h[k];
+      for(const id in h.pools) t.pools[id]=(t.pools[id]||0)+h.pools[id];
+      const r=rate(d);
+      if(r!==null){t.boot+=h.total*r;if(t.rate===null)t.rate=r;}
+      else if(h.total>0)t.priced=false;
+    }
+    const labels=Object.keys(tok).sort((a,b)=>(ORD[a]??99)-(ORD[b]??99)||(tok[b].total-tok[a].total));
+    const est=v=>v===null?"–":NB(v);
+    let grand=0,unpriced=false;
+    const rows=labels.map(L=>{
+      const t=tok[L];
+      grand+=t.boot;if(!t.priced)unpriced=true;
+      const r=t.rate;
+      const subs=[["liquid","liquid"],["delegated","delegated"],["undelegating","undelegating"]]
+        .filter(([k])=>t[k]>0)
+        .map(([k,lab])=>`<div class="sub"><span class="lbl">${lab}</span><span class="amt">${N(t[k])}</span><span class="est">${r?est(t[k]*r):""}</span></div>`);
+      for(const id of Object.keys(t.pools).sort((a,b)=>t.pools[b]-t.pools[a])){
+        if(t.pools[id]>0) subs.push(`<div class="sub"><span class="lbl">${poolName(id)}</span><span class="amt">${N(t.pools[id])}</span><span class="est">${r?est(t.pools[id]*r):""}</span></div>`);
+      }
+      const tokEst=t.priced||t.boot>0?est(t.boot):"–";
+      return `<div class="tok"><div class="row"><span class="d">${L}</span><span class="amt">${N(t.total)}</span><span class="est">${tokEst}</span></div>${subs.join("")}</div>`;
+    }).join("");
+    const header=`<div class="cols"><span class="lbl">token</span><span>amount</span><span>pussy at halt</span></div>`;
+    const hero=`<div class="hero">${NB(grand)}${unpriced?" +":""}<span class="unit">PUSSY</span></div><div class="hero-sub">total swap value · warp prices at halt</div>`;
+    const nicks=PASS&&PASS[addr];
+    const passline=nicks&&nicks.length
+      ?`<div class="passline">passport${nicks.length>1?"s":""}: ${nicks.map(n=>`<b>${n.replace(/</g,"&lt;")}</b>`).join(" · ")}</div>`
+      :"";
+    bal.innerHTML=hero+passline+header+rows;
+  }catch(e){der.textContent="";err.textContent=String(e.message||e);}
+};
+</script>
+</body>
+</html>
