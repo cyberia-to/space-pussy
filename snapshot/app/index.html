@@ -240,6 +240,11 @@ async function fromPriv(hex){
   const pk=base.hex.decode(hex.trim().replace(/^0x/,"").toLowerCase());
   return addrOf(secp.secp256k1.getPublicKey(pk, true));
 }
+async function toPussy(bostromAddr){
+  const {base}=await libs();
+  const d=base.bech32.decode(bostromAddr,90);
+  return base.bech32.encode("pussy",d.words);
+}
 async function fromLedger(){
   const tp=(await import("https://cdn.jsdelivr.net/npm/@ledgerhq/hw-transport-webusb@6.28.1/+esm")).default;
   const Cosmos=(await import("https://cdn.jsdelivr.net/npm/@ledgerhq/hw-app-cosmos@6.30.0/+esm")).default;
@@ -251,15 +256,16 @@ async function fromLedger(){
 
 // holdings index (lazy): address -> { denom: {label,liquid,delegated,undelegating,pools:{id:amt},total} }
 // prices.json: rates (denom -> boot per micro-unit) + pool compositions.
-let HOLD=null,PRICES=null,PASS=null,NICK=null;
+let HOLD=null,PRICES=null,PASS=null,NICK=null,BPASS=null;
 async function loadHoldings(){
   if(HOLD)return HOLD;
-  const [txt,pr,ps]=await Promise.all([
+  const [txt,pr,ps,bp]=await Promise.all([
     fetchData("holdings.jsonl").then(r=>r.text()),
     fetchData("prices.json").then(r=>r.json()).catch(()=>null),
     fetchData("passports_by_owner.json").then(r=>r.json()).catch(()=>null),
+    fetchData("bostrom_passports.json").then(r=>r.json()).catch(()=>null),
   ]);
-  PRICES=pr;PASS=ps;
+  PRICES=pr;PASS=ps;BPASS=bp;
   HOLD={};
   for(const line of txt.split("\n")){
     if(!line.trim())continue;
@@ -296,14 +302,25 @@ document.getElementById("go").onclick=async()=>{
         for(const o in (PASS||{})) for(const n of PASS[o]) NICK[n.toLowerCase()]=o;
       }
       addr=NICK[q];
-      if(!addr){der.textContent="";err.textContent=`passport "${q}" not found in the snapshot`;return;}
+      let viaBostrom=null;
+      if(!addr&&BPASS){
+        if(!window.BNICK){window.BNICK={};for(const o in BPASS)for(const n of BPASS[o])window.BNICK[n.toLowerCase()]=o;}
+        const bo=window.BNICK[q];
+        if(bo){addr=await toPussy(bo);viaBostrom=bo;}
+      }
+      if(!addr){der.textContent="";err.textContent=`passport "${q}" not found on space-pussy or bostrom`;return;}
+      if(viaBostrom)der.dataset.via=`bostrom passport → ${viaBostrom}`;
     }
-    else if(mode==="addr") addr=document.getElementById("addr").value.trim();
+    else if(mode==="addr"){
+      addr=document.getElementById("addr").value.trim();
+      if(addr.startsWith("bostrom1")) addr=await toPussy(addr);
+    }
     else if(mode==="mnem") addr=await fromMnemonic(document.getElementById("mnem").value);
     else if(mode==="priv") addr=await fromPriv(document.getElementById("priv").value);
     else if(mode==="ledger") addr=await fromLedger();
     if(!addr||!addr.startsWith("pussy1")){der.textContent="";err.textContent="not a pussy address";return;}
     der.textContent=addr;
+    if(der.dataset.via){der.textContent=addr+"  ·  "+der.dataset.via;delete der.dataset.via;}
     bal.innerHTML='<div class="hint">loading snapshot holdings…</div>';
     const H=await loadHoldings();
     const rec=H[addr];
