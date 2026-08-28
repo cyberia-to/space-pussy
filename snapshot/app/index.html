@@ -165,10 +165,12 @@ const CIDS = {
  "pools.json":"Qmb5gLZEx12vC6W4PkRR5PwnCp38t2GmzLpHZuQ272qo91",
  "passports.jsonl":"QmTvMKGSjB44arkBNwc8qdBWCEScj1PHCg4c4y2nj8r8nx",
  "passports_by_owner.json":"QmeySKGA4SAR9UDkpyv4dMZ5zC8STQqGuPSAd6Cdcrr6kc",
+ "cyberlinks_indexed.csv.gz":"QmQQ1Xz8edsEeGRwnvgA831Ve7bRjsqYfEESLSwGtEG2iX",
  "holdings.jsonl":"QmcxDahwm8hSwZdp8gBWhnBZx8BRBXKyaNkdviiynaFeYi",
  "prices.json":"QmR2hWtY2mYx27eAHeB1TdebDhSTU3h7s3WWN6gVCFb3e3",
 };
 const DESC = {
+"cyberlinks_indexed.csv.gz":"cyberlink graph 29,112 of 48,370 onchain — early pruned history partly lost; see manifest.graph_coverage",
  "holdings.jsonl":"per-account breakdown: liquid · delegated · per-pool (LP decomposed into underlying tokens)",
  "prices.json":"pussy rate per denom from snapshot pool reserves + pool compositions",
  "balances.csv":"every account, every denom — liquid bank balances",
@@ -191,7 +193,7 @@ async function fetchData(f){
 }
 
 // dataset table
-const order=["holdings.jsonl","prices.json","balances.csv","passports.jsonl","passports_by_owner.json","pools.json","delegations.csv","validators.json","pubkeys.csv","supply.json"];
+const order=["cyberlinks_indexed.csv.gz","holdings.jsonl","prices.json","balances.csv","passports.jsonl","passports_by_owner.json","pools.json","delegations.csv","validators.json","pubkeys.csv","supply.json"];
 let man={};
 render();
 fetchData("manifest.json").then(r=>r.json()).then(m=>{man=m.files||{};render();}).catch(()=>{});

@@ -66,6 +66,22 @@
    "cid": "QmXK1mnpfo9o637YdthorAqtMPjcM1wBRorBYtUhnNzmZ4",
    "sha256": "20d6de357b858ec5537620c244c0387cca1ddcfb5bad403a429ca16de5679f51",
    "bytes": 45157
+  },
+  "cyberlinks_indexed.csv.gz": {
+   "cid": "QmQQ1Xz8edsEeGRwnvgA831Ve7bRjsqYfEESLSwGtEG2iX",
+   "sha256": "6b13875e44902d16a86121a1496f4d7db332c23e712b816250a1afb1628464fb",
+   "bytes": 1969073
   }
+ },
+ "graph_coverage": {
+  "onchain_cyberlinks": 48370,
+  "onchain_particles": 32682,
+  "restored_cyberlinks": 29112,
+  "sources": {
+   "heights 368..10455264": "space-pussy indexer (hasura) \u2014 28302 links; the node is pruned below 10455265 and no archive node exists anywhere",
+   "heights 10455265..19940993": "block events from the live node \u2014 810 links, matches the indexer count for the same range exactly"
+  },
+  "missing_early_links": 19258,
+  "note": "19258 links (39.8%) from the early pruned history were never indexed and are unrecoverable; the restored set is the maximum physically extractable at snapshot time"
  }
 }
