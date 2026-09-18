@@ -82,6 +82,16 @@
   .err{color:var(--red);font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;margin-top:10px}
   .foot{margin-top:40px;color:var(--mut);font-size:12px;font-family:'JetBrains Mono',ui-monospace,monospace}
   .foot a{color:var(--cyan);text-decoration:none}
+  .reborn{margin:22px 0 8px;padding:20px 22px;border:1px solid var(--grn);border-radius:14px;background:var(--s1);box-shadow:0 0 40px color-mix(in srgb,var(--grn) 22%,transparent)}
+  .reborn .rt{font-size:.82rem;letter-spacing:.12em;text-transform:uppercase;color:var(--grn)}
+  .reborn .rd{display:flex;gap:18px;flex-wrap:wrap;margin:10px 0 6px;font-family:'JetBrains Mono',ui-monospace,monospace}
+  .reborn .rd div{text-align:center;min-width:64px}
+  .reborn .rd b{display:block;font-size:2.1rem;line-height:1;color:var(--tx)}
+  .reborn .rd span{font-size:.68rem;color:var(--mut);letter-spacing:.08em;text-transform:uppercase}
+  .reborn .rw{font-size:.86rem;color:var(--mut)}
+  .reborn .rw b{color:var(--tx);font-weight:400}
+  .reborn .rw a{color:var(--grn)}
+  .reborn.live .rd b{color:var(--grn)}
 </style>
 </head>
 <body>
@@ -103,6 +113,12 @@
 <div class="wrap">
   <h1>🐈 space-pussy — final snapshot</h1>
   <div class="sub">halted at height 19,940,993 · 2026-06-14 08:36 UTC · the cat sleeps</div>
+
+  <div class="reborn" id="reborn">
+    <div class="rt">🐈 space-pussy is reborn · 2026-11-05 · 13:37 UTC</div>
+    <div class="rd" id="rd"><div><b>--</b><span>days</span></div><div><b>--</b><span>hours</span></div><div><b>--</b><span>min</span></div><div><b>--</b><span>sec</span></div></div>
+    <div class="rw" id="rw">fifteen minutes after bostrom: the cat wakes in a new body on <a href="https://soft3.org" target="_blank" rel="noopener">soft3</a>, with $PUSSY, every balance and the recovered graph from this snapshot. read <a href="https://cyber.page/launch" target="_blank" rel="noopener">the launch</a></div>
+  </div>
 
   <div class="epitaph">
     the space-pussy chain — bostrom's playful sibling — ran from 2022 and grew 32,682 particles,
@@ -373,5 +389,23 @@ document.getElementById("go").onclick=async()=>{
 <!-- lytics: anonymous, signed, PoW-gated pageview + attention tracking.
      shared "cyberia" identity domain — see lytics/specs for the model. -->
 <script type="module" src="https://lytics.cyb.ai/tracker/loader.js" data-endpoint="https://lytics.cyb.ai"></script>
+
+<script>
+(function(){
+  var T=Date.parse("2026-11-05T13:37:00Z"), rd=document.getElementById("rd"), rw=document.getElementById("rw"), box=document.getElementById("reborn");
+  var local=new Date(T).toLocaleString(undefined,{dateStyle:"medium",timeStyle:"short"});
+  var base=rw.innerHTML;
+  rw.innerHTML=base+' · <b>'+local+'</b> your time';
+  function pad(n){return (n<10?"0":"")+n}
+  function tick(){
+    var d=T-Date.now();
+    if(d<=0){box.classList.add("live");rd.innerHTML='<div><b>live</b><span>the new body</span></div>';return}
+    var s=Math.floor(d/1000),D=Math.floor(s/86400),H=Math.floor(s%86400/3600),M=Math.floor(s%3600/60),S=s%60;
+    rd.innerHTML='<div><b>'+D+'</b><span>days</span></div><div><b>'+pad(H)+'</b><span>hours</span></div><div><b>'+pad(M)+'</b><span>min</span></div><div><b>'+pad(S)+'</b><span>sec</span></div>';
+    setTimeout(tick,1000-(Date.now()%1000));
+  }
+  tick();
+})();
+</script>
 </body>
 </html>
