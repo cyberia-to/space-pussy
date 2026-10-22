@@ -1,4 +1,4 @@
-/* spacepussy.ai — on top of the house stylesheet. the pink is the cat's; Orbitron is the family's voice. */
+/* spacepussy.ai — on top of the house stylesheet. the pink is space-pussy's; Orbitron is the family's voice. */
 :root{--pink:#ff2d92}
 .brand{font-family:'Orbitron',var(--sans);font-weight:900;letter-spacing:.14em}
 .brand .dot{background:var(--pink);box-shadow:0 0 18px var(--pink)}
