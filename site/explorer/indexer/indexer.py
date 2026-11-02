@@ -14,12 +14,15 @@ tip and truncates the tail), and every --publish seconds writes three static fil
                 replayed and joined with /cards/<neuron> for the current card, and the settled epochs
                 with what each paid; earned per position = Σ payouts of its card
   summary.json  tip, chainwork, recent hashrate and block time, totals, top miners
+  earnings.json the emission ledger per epoch and the miners of the last hour, day and all blocks (earnings.py)
+  payouts.json  every payout as a receipt, the links and particles paid most, stakers and positions with their yield (earnings.py)
 
 every --network-every seconds (network.py): network.json — the nodes the node sees on the wire and the ones the chain
 announces, placed by DB-IP Lite (--geo), named by --nodes.
 
 and once per settled epoch (focus.py, in a thread): the full φ* of the epoch into --data/focus/<epoch>.json (the node keeps
-only the last one), and axons.json, neurons.json, particles.json, phi/<xx>.json from φ*, the genesis export under
+only the last one), and axons.json, neurons.json, particles.json, phi/<xx>.json, moved.json (who moved focus) and graph.json (the top of the graph)
+from φ*, the genesis export under
 --genesis and the cyberlinks in the blocks.
 
 each file is written whole and renamed into place, so a reader never sees half of one.
@@ -41,6 +44,7 @@ from bisect import bisect_left, bisect_right
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
+from earnings import Earnings
 from focus import FocusIndex
 from network import Network
 
@@ -130,6 +134,7 @@ class Index:
         self.bits = array('L')      # compact target, by height
         self.txs = array('l')       # transactions incl. coinbase
         self.size = array('l')
+        self.fees = array('q')      # Σ fees of the block's transactions, all to its miner (chain-economy §6.4)
         self.miner = array('l')     # index into self.miners, -1 = none
         self.off = array('q')       # byte offset of each line in blocks.jsonl
         self.ids = bytearray()      # 32 bytes per height
@@ -141,6 +146,7 @@ class Index:
         self.card_ids = {}          # "from:p:q" -> card id, kept across unlocks
         self.chain = ''
         self.min_lock = 20160
+        self.earn = Earnings(self, work_of)
         self.load()
 
     # ------------------------------------------------------------------ store
@@ -184,6 +190,7 @@ class Index:
         self.bits.append(int(b['bits'], 16))
         self.txs.append(int(b['txs']))
         self.size.append(int(b['size']))
+        self.fees.append(int(b.get('fees') or 0))
         m = b.get('miner')
         if m:
             if m not in self.miner_ix:
@@ -220,7 +227,7 @@ class Index:
         if n >= len(self.t):
             return
         cut = self.off[n]
-        for a in (self.t, self.bits, self.txs, self.size, self.miner, self.off):
+        for a in (self.t, self.bits, self.txs, self.size, self.fees, self.miner, self.off):
             del a[n:]
         del self.ids[n * 32:]
         self.stx = [(h, s) for h, s in self.stx if h < n]
@@ -349,7 +356,7 @@ class Index:
                 points.append((h, active, total))
         return cards, points
 
-    def bins(self, lo, hi, points):
+    def bins(self, lo, hi, points, bps_at=None):
         """heights lo..hi (lo >= 2) in <= self.points bins."""
         n = hi - lo + 1
         if n <= 0:
@@ -365,7 +372,7 @@ class Index:
         def W(a, b):                                    # Σ work over heights a..b
             return cw[b - base + 1] - cw[a - base]
         ph = [p[0] for p in points]
-        out = {k: [] for k in ('h', 't', 'hr', 'hr_lo', 'hr_hi', 'd', 'd_lo', 'd_hi', 'bt', 'bt_lo', 'bt_hi', 'tx', 'sa', 'st')}
+        out = {k: [] for k in ('h', 't', 'hr', 'hr_lo', 'hr_hi', 'd', 'd_lo', 'd_hi', 'bt', 'bt_lo', 'bt_hi', 'tx', 'sa', 'st', 'fb')}
         win = max(per, ROLL)                            # the line: over the bin, never fewer than ROLL blocks
         for a in range(lo, hi + 1, per):
             b = min(hi, a + per - 1)
@@ -394,6 +401,7 @@ class Index:
             out['tx'].append(sum(txs[i] - 1 for i in range(a, b + 1)))
             out['sa'].append(sig(float(p[1]), 6))
             out['st'].append(sig(float(p[2]), 6))
+            out['fb'].append(bps_at(b) if bps_at else None)
         out['per'] = per
         out['from'] = lo
         out['to'] = hi
@@ -423,12 +431,22 @@ class Index:
             return
         now = int(time.time())
         cards, points = self.replay()
+        bps_at = None
+        try:
+            self.earn.prepare(eco)
+            bps_at = self.earn.bps_at
+        except Down:
+            raise
+        except Exception as e:      # the earnings views are a side view: their failure never stops the index
+            log(f'earnings: {type(e).__name__}: {e}')
         hist = {'version': VERSION, 'chain': self.chain, 'generated': now, 'tip': tip, 'tip_time': self.t[tip], 'target': TARGET,
                 'note': 'per bin: h = last height, t = its time; hr = Σ work ÷ Δt (H/s) and bt = mean block time (s), both over the bin or the 12 blocks '
                         'ending at it when the bin is shorter; hr_lo/hr_hi = range of a 12-block rolling estimate, bt_lo/bt_hi = fastest/slowest block; '
                         'd = expected hashes per block 2^256/(target+1); tx = transactions, coinbase excluded; '
-                        'sa/st = active/total stake at the bin end (floats for plotting; exact values in stakes.json). genesis-to-block-1 is left out.',
-                'smooth': ROLL, 'ranges': {'all': self.bins(2, tip, points), 'day': self.bins(self.since(86400), tip, points), 'hour': self.bins(self.since(3600), tip, points)}}
+                        'sa/st = active/total stake at the bin end (floats for plotting; exact values in stakes.json); fb = focus_bps in force for the bin\'s last '
+                        'block, the share of the subsidy that goes to the focus pool, in basis points (chain-economy §6.1). genesis-to-block-1 is left out.',
+                'smooth': ROLL, 'ranges': {'all': self.bins(2, tip, points, bps_at), 'day': self.bins(self.since(86400), tip, points, bps_at),
+                           'hour': self.bins(self.since(3600), tip, points, bps_at)}}
         self.write('history.json', hist)
 
         # positions joined with the node's cards (current state) and the epochs' payouts (earned)
@@ -475,6 +493,14 @@ class Index:
                   'earned_total': str(sum(earned.values())), 'positions': positions, 'epochs': epochs,
                   'events': [{'h': h, **{k: (str(v) if k == 'amount' else v) for k, v in s.items()}} for h, s in self.stx[-200:]][::-1]}
         self.write('stakes.json', stakes)
+        if bps_at:
+            try:
+                self.earn.write_blocks(now)
+                self.earn.write_payouts(cards, now)
+            except Down:
+                raise
+            except Exception as e:
+                log(f'earnings: {type(e).__name__}: {e}')
 
         hr100, bt100 = self.rate(100)
         hr1k, bt1k = self.rate(1000)
@@ -489,7 +515,8 @@ class Index:
                    'hashrate_100': sig(hr100), 'hashrate_1000': sig(hr1k), 'block_time_100': sig(bt100), 'block_time_1000': sig(bt1k),
                    'txs_total': sum(self.txs) - (len(self.txs) - 1), 'staking_txs': len(self.stx), 'cyberlinks': len(self.links), 'positions_open': stakes['positions_open'],
                    'active_stake': str(act), 'total_stake': str(tot), 'epochs_settled': len(self.epochs), 'earned_total': stakes['earned_total'],
-                   'miners_1000': [{'miner': self.miners[m], 'blocks': n} for m, n in top], 'blocks_file_bytes': os.path.getsize(self.path)}
+                   'miners_1000': [{'miner': self.miners[m], 'blocks': n} for m, n in top], 'blocks_file_bytes': os.path.getsize(self.path),
+                   'earnings': self.earn.totals}
         self.write('summary.json', summary)
 
     def write(self, name, obj):
