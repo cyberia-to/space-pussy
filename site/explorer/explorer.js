@@ -1,5 +1,6 @@
 /* spacepussy.ai/explorer — a static page over a node's read API (cybernode rs/src/node/chain_routes.rs)
-   and the files of its indexer (site/explorer/indexer: data/history.json, stakes.json, summary.json).
+   and the files of its indexer (site/explorer/indexer: data/history.json, stakes.json, summary.json, and once per settled epoch
+   axons.json, neurons.json, particles.json, phi/<xx>.json).
    the node answers at /explorer/api/<path> on the same origin; ?api=<base> points the page at another node.
    live: /tip once a second while the tab is visible, /status every few seconds and on every new block.
    no build, no framework: one file, hash routes, big integers kept as strings or BigInt, never floats for amounts. */
@@ -587,12 +588,10 @@ async function preview(cid) {
 
 async function particle(id) {
   const st = await status();
-  const [r, c, stk] = await Promise.all([req(`/focus/${id}`), cidOf(id), file('stakes.json')]);
+  const [r, c, stk, ser] = await Promise.all([req(`/focus/${id}`), cidOf(id), file('stakes.json'), file(`phi/${id.slice(0, 2)}.json`, 300000)]);
   const f = r.ok ? r.data : null;
   const share = f ? pct(big(f.phi), SCALE) : '—';
-  const touching = ((stk && stk.positions) || []).filter((p) => p.p === id || p.q === id);
-  const sHead = ['neuron', 'p → q', 'valence', '>staked', '>earned'];
-  const sRows = touching.map((p) => tds([ref('neuron', p.neuron), `${p.p === id ? '<span class="me">this</span>' : ref('particle', p.p)} → ${p.q === id ? '<span class="me">this</span>' : ref('particle', p.q)}`, val(p.valence), grp(p.stake), grp(p.earned)], sHead));
+  const around = stakeAround(id, (stk && stk.positions) || [], f, ser);
   let content;
   if (!c.map) content = `<div class="empty">the map from particles to legacy CIDs is not published on this explorer yet.</div>`;
   else if (!c.cid) content = `<div class="empty">no legacy CID is known for this particle: it is not in the recovered graph's map.</div>`;
@@ -605,8 +604,33 @@ async function particle(id) {
   <h2>focus φ*</h2>${f ? `<div class="tiles">${tile('share of focus', share, `epoch ${grp(f.epoch)} · the last settled with φ*`, 'hero')}${tile('rank', `${grp(f.rank)}<span class="u">of ${grp(f.particles)}</span>`, '1 = the most attended')}${tile('φ* raw', grp(f.phi), `fixed point, scale 2^${esc(f.scale_bits)}`)}</div>`
     : `<div class="empty">no focus for this particle at the last settled epoch (${grp(st['last-settled'])}). a particle gets focus once a settlement sees it in the graph.</div>`}
   <h2>content</h2>${content}
-  ${touching.length ? `<h2>staked cyberlinks</h2>${table(sHead, sRows)}` : ''}
+  <h2>stake around this particle</h2>${around}
   <p class="note">the node serves focus per particle; the unstaked cyberlinks into and out of a particle are not indexed by this API yet. <a href="#/neuron/${id}">read it as a neuron</a> · <a href="#/focus">top particles</a></p>`;
+}
+
+// positions on the particle's in-axons (· → this) and out-axons (this → ·), what they earned, and how its focus moved
+function stakeAround(id, positions, f, ser) {
+  const mine = positions.filter((p) => p.p === id || p.q === id);
+  const sum = (xs) => xs.reduce((s, p) => s + big(p.stake), 0n);
+  const open = mine.filter((p) => p.open);
+  const inFor = open.filter((p) => p.q === id && Number(p.valence) !== -1); const inAg = open.filter((p) => p.q === id && Number(p.valence) === -1);
+  const outFor = open.filter((p) => p.p === id && Number(p.valence) !== -1); const outAg = open.filter((p) => p.p === id && Number(p.valence) === -1);
+  const earned = mine.reduce((s, p) => s + big(p.earned), 0n);
+  const series = ser && ser.p && ser.p[id]; const eps = (ser && ser.epochs) || [];
+  let delta = '<span class="mute">—</span>'; let dnote = 'the explorer records φ* from epoch to epoch; two recorded epochs give a change';
+  if (series && eps.length > 1) {
+    const cur = series[series.length - 1]; const prev = series[series.length - 2];
+    delta = dshare(cur, prev); dnote = `epoch ${grp(eps[eps.length - 2])} → ${grp(eps[eps.length - 1])}${prev === null ? ': not in the record of the epoch before' : ''}`;
+  }
+  const pl = (n, w) => `${grp(n)} open ${w}${n === 1 ? '' : 's'}`;
+  const tiles = `<div class="tiles">${tile('Δ focus', delta, `${dnote}${f ? ` · rank ${grp(f.rank)} of ${grp(f.particles)} by φ*` : ''}`)}
+    ${tile('in-axons: for', amtc(sum(inFor).toString()), `${pl(inFor.length, 'position')} into this particle, valence +1 or 0`, 'stake')}${tile('in-axons: against', amtc(sum(inAg).toString()), `${pl(inAg.length, 'position')} into it, valence −1`, 'stake')}
+    ${tile('out-axons', amtc(sum(outFor).toString()), `for, out of this particle · against ${grp(sum(outAg).toString())} · ${pl(outFor.length + outAg.length, 'position')}`, 'stake')}${tile('earned', amtc(earned.toString()), `by the ${grp(mine.length)} position${mine.length === 1 ? '' : 's'} around it, open or closed`)}</div>`;
+  const head = ['side', 'neuron', 'p → q', 'valence', '>staked', '>earned', 'state~'];
+  const rows = mine.map((p) => tds([p.q === id ? 'in' : 'out', ref('neuron', p.neuron), `${p.p === id ? '<span class="me">this</span>' : ref('particle', p.p)} → ${p.q === id ? '<span class="me">this</span>' : ref('particle', p.q)}`,
+    val(p.valence), amtc(p.stake), amtc(p.earned), p.open ? (p.card ? ref('card', p.card) : 'open') : '<span class="mute">closed</span>'], head));
+  return `${tiles}${mine.length ? `<h2>&nbsp;</h2>${table(head, rows)}` : '<p class="note">no staking position on an axon into or out of this particle yet. a stake on one of its in-axons pushes focus toward it; it earns when the push raises syntropy (chain-economy §5).</p>'}
+  <p class="note">positions from the explorer's index of staking txs (stake now, earned = Σ payouts of each card); Δ focus in percentage points (pp) of all focus.</p>`;
 }
 
 /* ------------------------------------------------------------------ epochs, focus */
@@ -646,19 +670,247 @@ async function epoch(n) {
   <h2>payouts</h2>${table(pHead, pRows, 'no payouts this epoch: no position took its axon side to a new high with a positive share')}`;
 }
 
-async function focus() {
+/* focus: three indexes — particles (the node, live), axons and neurons (the indexer, once per settled epoch) */
+const shr = (raw) => (raw === null || raw === undefined ? '—' : pct(big(raw), SCALE));
+// a change of share in percentage points of all focus, signed
+const dshare = (cur, prev) => {
+  if (prev === null || prev === undefined || cur === null || cur === undefined) return '<span class="mute">—</span>';
+  const d = big(cur) - big(prev); if (d === 0n) return '0';
+  const x = (Number(d) / 2 ** 60) * 100; const a = Math.abs(x);
+  const s = a >= 0.0001 ? a.toFixed(4) : a.toExponential(1);
+  return `<span class="${x > 0 ? 'pos' : 'neg'}">${x > 0 ? '+' : '−'}${s}${SEP}pp</span>`;
+};
+const gw = (cid) => (cid ? `<a class="gw" href="${esc(GATEWAY + cid)}" target="_blank" rel="noopener" title="the content behind it: ${esc(cid)}">↗</a>` : '');
+const FOCUS_TABS = [['', 'particles'], ['axons', 'axons'], ['neurons', 'neurons']];
+const focusSeg = (on) => `<div class="seg" role="group" aria-label="index">${FOCUS_TABS.map(([k, l]) => `<a class="${on === k ? 'on' : ''}" href="#/focus${k ? '/' + k : ''}">${l}</a>`).join('')}</div>`;
+const SPEC = 'https://github.com/cyberia-to/cybernode/blob/main/specs/chain-economy.md';
+const FX = { chart: null, axons: null, aShown: 50, neurons: null, nSort: 'f', nDir: -1, nShown: 50, bal: new Map() };
+
+async function focus(sub) {
   const st = await status();
-  const r = await req('/focus?top=100');
-  if (!r.ok) return `<p class="kick">focus</p><h1>focus <em>φ*</em></h1><div class="empty">no settled epoch with φ* on this node yet.</div>`;
+  if (sub === 'axons') return focusAxons(st);
+  if (sub === 'neurons') return focusNeurons(st);
+  const [r, pj, stk] = await Promise.all([req('/focus?top=100'), file('particles.json'), file('stakes.json')]);
+  if (!r.ok) return `<p class="kick">focus</p><h1>focus <em>φ*</em></h1>${focusSeg('')}<div class="empty">no settled epoch with φ* on this node yet.</div>`;
   const f = r.data; const top = f.top || [];
+  const byP = new Map(((pj && pj.rows) || []).map((x) => [x[0], x]));
+  const sameEpoch = pj && Number(pj.epoch) === Number(f.epoch);
   const max = top.length ? big(top[0].phi) : 1n;
-  const head = ['rank', 'particle', '>share', '', '>φ* raw~'];
-  const rows = top.map((t, i) => { const w = max ? Number((big(t.phi) * 1000n) / max) / 10 : 0; return tds([grp(i + 1), ref('particle', t.particle), pct(big(t.phi), SCALE), `<i class="bar" style="width:${Math.max(1, w * 1.2).toFixed(1)}px"></i>`, grp(t.phi)], head); });
+  const head = ['rank', 'particle', '>share', '', '>Δ share', '>φ* raw~'];
+  const rows = top.map((t, i) => {
+    const w = max ? Number((big(t.phi) * 1000n) / max) / 10 : 0; const x = byP.get(t.particle);
+    return tds([grp(i + 1), `${ref('particle', t.particle)}${gw(x && x[7])}`, pct(big(t.phi), SCALE), `<i class="bar" style="width:${Math.max(1, w * 1.2).toFixed(1)}px"></i>`, sameEpoch && x ? dshare(x[1], x[2]) : '<span class="mute">—</span>', grp(t.phi)], head);
+  });
   const sum = top.reduce((s, t) => s + big(t.phi), 0n);
+  viewLive = () => (LIVE.st['last-settled'] !== st['last-settled'] ? render(true) : null);
+  const chart = pj ? await chartData(pj, stk) : null;
+  FX.chart = chart;
+  if (chart) setTimeout(drawFocusStake, 0);
   return `<p class="kick">focus · ${esc(st.chain)}</p><h1>focus <em>φ*</em></h1>
   <p class="sub">epoch ${grp(f.epoch)} · syntropy ${grp(f.syntropy)} · digest ${short(f.digest)}${cp(f.digest || '')}</p>
-  <p class="note">φ* is the stationary attention of the graph: where a walk over all cyberlinks, weighted by stake, spends its time. share = φ* ÷ 2^${esc(f.scale_bits)}; the top ${grp(top.length)} hold ${pct(sum, SCALE)}.</p>
+  ${focusSeg('')}
+  <p class="note">φ* is the stationary attention of the graph: where a walk over all cyberlinks, weighted by stake, spends its time. share = φ* ÷ 2^${esc(f.scale_bits)}; the top ${grp(top.length)} hold ${pct(sum, SCALE)}. Δ share is the change from epoch ${pj && pj.prev_epoch ? grp(pj.prev_epoch) : '—'} in percentage points (pp), from the explorer's record of φ* per epoch${pj && pj.prev_epoch ? '' : ', which starts with this epoch'}.</p>
+  <h2>focus × stake</h2>${chart ? focusStakeFigure(chart) : '<div class="empty">the chart needs the explorer\'s index (data/particles.json), which is not served here yet.</div>'}
   <h2>top particles</h2>${table(head, rows, 'no focus yet')}`;
+}
+
+// the points of the focus × stake chart: the top 200 by φ* and every particle with stake on its in-axons (stake now, from stakes.json)
+async function chartData(pj, stk) {
+  const inS = new Map(); let total = 0n;
+  for (const p of (stk && stk.positions) || []) {
+    if (!p.open) continue;
+    const s = big(p.stake); total += s;
+    const v = inS.get(p.q) || { for: 0n, against: 0n, earned: 0n, n: 0 };
+    if (Number(p.valence) === -1) v.against += s; else v.for += s;
+    v.earned += big(p.earned); v.n++; inS.set(p.q, v);
+  }
+  const rows = new Map((pj.rows || []).map((x) => [x[0], x]));
+  const missing = [...inS.keys()].filter((q) => !rows.has(q)).slice(0, 20);
+  for (const q of missing) {
+    const f = await api(`/focus/${q}`).catch(() => null);
+    if (f) rows.set(q, [q, String(f.phi), null, f.rank, '0', '0', '0', null]);
+  }
+  const pts = [];
+  for (const [id, x] of rows) {
+    const s = inS.get(id);
+    if (!(Number(x[3]) <= (pj.chart_top || 200) || s)) continue;
+    const share = Number(big(x[1])) / 2 ** 60;
+    if (!(share > 0)) continue;
+    const stake = s ? s.for + s.against : 0n; const net = s ? s.for - s.against : 0n;
+    pts.push({ id, share, stake: Number(stake), stakeRaw: stake, net, s, rank: x[3], cur: x[1], prev: x[2], cid: x[7] });
+  }
+  return { pts, total: Number(total), totalRaw: total, epoch: pj.epoch };
+}
+
+function focusStakeFigure(c) {
+  const above = c.pts.filter((p) => c.total > 0 && p.stake / c.total > p.share);
+  const floor = c.pts.filter((p) => p.stake === 0);
+  const top = above.slice().sort((a, b) => b.stake / c.total / b.share - a.stake / c.total / a.share)[0];
+  const reading = c.total > 0
+    ? `${grp(above.length)} particle${above.length === 1 ? '' : 's'} above the diagonal: capital runs ahead of attention there${top ? ` (the furthest, ${short(top.id)}, holds ${(100 * top.stake / c.total).toFixed(1)}${SEP}% of the stake on axons and ${(100 * top.share).toFixed(2)}${SEP}% of focus)` : ''}. ${grp(floor.length)} of the ${grp(c.pts.length)} on the floor or below it: attention with no capital yet, where a new stake meets the largest gradient (<a href="${SPEC}#52-attribution-per-position" target="_blank" rel="noopener">chain-economy §5.2</a>).`
+    : `no stake on any axon yet: every particle sits on the floor, attention with no capital, where a new stake meets the largest gradient (<a href="${SPEC}#52-attribution-per-position" target="_blank" rel="noopener">chain-economy §5.2</a>).`;
+  return `<figure class="chart fxs"><figcaption><span class="ct">every particle in the top 200 or with stake on its in-axons</span><span class="lg"><i class="dot" style="background:${COL.green}"></i>net for<i class="dot" style="background:${COL.red}"></i>net against<i class="dot" style="background:${COL.none}"></i>no stake</span></figcaption>
+  <canvas id="fxs" height="360"></canvas><div class="tipbox" id="fxs-tip" hidden></div>
+  <p class="note">x = share of focus φ* at epoch ${grp(c.epoch)} (log) · y = stake on the particle's in-axons now, for + against (log; no stake sits on the floor) · the dashed diagonal is stake share = focus share, against the ${amtc(c.totalRaw.toString())} staked on all axons. ${reading} click a dot to open the particle.</p></figure>`;
+}
+
+function drawFocusStake(hover) {
+  const cv = $('#fxs'); const c = FX.chart; if (!cv || !c) return;
+  const dpr = window.devicePixelRatio || 1; const W = cv.clientWidth || 600; const H = W < 520 ? 300 : 360;
+  cv.style.height = `${H}px`; cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const pts = c.pts; if (!pts.length) return;
+  const L = 58; const R = 12; const T = 12; const B = 30; const FLOOR = 22; const pw = W - L - R; const ph = H - T - B;
+  const xs = pts.map((p) => Math.log10(p.share));
+  let x0 = Math.floor(Math.min(...xs)); let x1 = Math.ceil(Math.max(...xs)); if (x1 === x0) x1++;
+  const st = pts.filter((p) => p.stake > 0).map((p) => Math.log10(p.stake));
+  const diag = c.total > 0 ? [10 ** x0 * c.total, 10 ** x1 * c.total].map(Math.log10) : [];
+  let y0 = Math.floor(Math.min(...st, ...diag, 9)); let y1 = Math.ceil(Math.max(...st, ...diag, 12)); if (y1 === y0) y1++;
+  const X = (share) => L + ((Math.log10(share) - x0) / (x1 - x0)) * pw;
+  const Y = (stake) => (stake > 0 ? T + (ph - FLOOR) - ((Math.log10(stake) - y0) / (y1 - y0)) * (ph - FLOOR) : T + ph - FLOOR / 2);
+  g.font = '10.5px "JetBrains Mono", Menlo, monospace'; g.fillStyle = COL.axis; g.strokeStyle = COL.grid; g.lineWidth = 1;
+  g.textAlign = 'right'; g.textBaseline = 'middle';
+  const ystep = Math.max(1, Math.ceil((y1 - y0) / 5));
+  for (let e = y0; e <= y1; e += ystep) { const y = Y(10 ** e); g.beginPath(); g.moveTo(L, y + 0.5); g.lineTo(L + pw, y + 0.5); g.stroke(); g.fillText(si(10 ** e).replace(/ /g, ''), L - 6, y); }
+  g.fillText('0', L - 6, Y(0));
+  g.setLineDash([2, 3]); g.beginPath(); g.moveTo(L, T + ph - FLOOR + 0.5); g.lineTo(L + pw, T + ph - FLOOR + 0.5); g.stroke(); g.setLineDash([]);
+  g.textAlign = 'center'; g.textBaseline = 'top';
+  for (let e = x0; e <= x1; e++) { const x = X(10 ** e); g.beginPath(); g.moveTo(x + 0.5, T); g.lineTo(x + 0.5, T + ph); g.stroke(); g.fillText(`${+(100 * 10 ** e).toPrecision(1)}%`, Math.min(Math.max(x, L + 16), L + pw - 16), T + ph + 8); }
+  g.save(); g.beginPath(); g.rect(L, T, pw, ph); g.clip();
+  if (c.total > 0) {
+    g.setLineDash([5, 5]); g.strokeStyle = COL.target; g.beginPath(); g.moveTo(X(10 ** x0), Y(10 ** x0 * c.total)); g.lineTo(X(10 ** x1), Y(10 ** x1 * c.total)); g.stroke(); g.setLineDash([]);
+    g.fillStyle = COL.axis; g.textAlign = 'left'; g.textBaseline = 'bottom'; g.fillText('stake share = focus share', L + 6, T + 14);
+  }
+  const col = (p) => (p.net > 0n ? COL.green : p.net < 0n ? COL.red : COL.none);
+  const order = pts.slice().sort((a, b) => a.stake - b.stake);
+  for (const p of order) {
+    const x = X(p.share); const y = Y(p.stake); const r = p.stake > 0 ? 6 : 4;
+    g.beginPath(); g.arc(x, y, r, 0, 7); g.fillStyle = col(p); g.globalAlpha = p.stake > 0 ? 1 : 0.7; g.fill(); g.globalAlpha = 1;
+    g.lineWidth = 2; g.strokeStyle = '#000'; g.stroke();
+  }
+  if (hover) { g.beginPath(); g.arc(X(hover.share), Y(hover.stake), 9, 0, 7); g.lineWidth = 2; g.strokeStyle = COL.ink; g.stroke(); }
+  g.restore();
+  g.fillStyle = COL.axis; g.textAlign = 'right'; g.textBaseline = 'bottom'; g.fillText('share of focus →', L + pw, H - 1);
+  const pick = (ev) => {
+    const p = ev.touches ? ev.touches[0] : ev; const rect = cv.getBoundingClientRect(); const mx = p.clientX - rect.left; const my = p.clientY - rect.top;
+    let best = null; let bd = 14 * 14;
+    for (const q of pts) { const d = (X(q.share) - mx) ** 2 + (Y(q.stake) - my) ** 2; if (d < bd) { bd = d; best = q; } }
+    return { best, mx, my };
+  };
+  cv.onmousemove = cv.ontouchstart = (ev) => {
+    const { best, mx, my } = pick(ev); const tb = $('#fxs-tip');
+    if (!best) { tb.hidden = true; if (FX.hover) { FX.hover = null; drawFocusStake(); } return; }
+    if (FX.hover !== best) { FX.hover = best; drawFocusStake(best); }
+    const s = best.s;
+    tb.hidden = false;
+    tb.innerHTML = `<b>${short(best.id)}</b> · rank ${grp(best.rank)}<br>focus ${(100 * best.share).toFixed(4)}${SEP}% · Δ ${dshare(best.cur, best.prev)}<br>${s ? `stake on in-axons: for ${amtc(s.for.toString())} · against ${amtc(s.against.toString())}<br>${grp(s.n)} position${s.n === 1 ? '' : 's'}, earned ${amtc(s.earned.toString())}` : 'no stake on its in-axons'}<br>${best.cid ? `content ${short(best.cid)}` : 'no legacy CID known'}`;
+    tb.style.left = `${Math.min(Math.max(0, mx + 14), cv.clientWidth - tb.offsetWidth + 8)}px`; tb.style.top = `${Math.max(30, my - 10)}px`;
+  };
+  cv.onmouseleave = () => { $('#fxs-tip').hidden = true; FX.hover = null; drawFocusStake(); };
+  cv.onclick = (ev) => { const { best } = pick(ev); if (best) location.hash = `#/particle/${best.id}`; };
+}
+
+const sanityNote = (a) => {
+  const s = a.sanity || {}; const S = 2n ** 60n;
+  const flow = big(s.flow_total); const out = big(s.phi_with_out);
+  const gap = out > flow ? out - flow : flow - out;
+  const lines = [];
+  lines.push(`Σ flow over all ${grp(s.axons_present)} axons = ${pct(flow, S)} of focus; Σ φ* of the ${grp(s.particles_with_out)} particles with out-axons = ${pct(out, S)}; they differ by ${grp(gap.toString())} raw units of 2^−60 (the floor of each axon's division)${Number(s.particles_with_out_missing_phi) ? `; ${grp(s.particles_with_out_missing_phi)} particles with out-axons have no φ* in the record` : ''}. Σ φ* recorded over ${grp(s.particles_with_phi)} particles = ${pct(big(s.phi_total), S)}.`);
+  const nodeA = s.node_axons_epoch ?? s.node_axons_timing; const linked = s.node_axons_stats;
+  lines.push(nodeA === s.axons_present
+    ? `axons: the explorer counts ${grp(s.axons_present)} present axons at the boundary (A &gt; 0: ${grp(s.axons_genesis)} from genesis, ${grp(s.axons_staked)} staked); the node's epoch record says ${grp(nodeA)} — equal.`
+    : `axons: the explorer counts ${grp(s.axons_present)} present axons at the boundary, the node's epoch record says ${grp(nodeA)} — they differ: the explorer replays stake from the blocks it has indexed, so a staking tx it has not seen (or a reorg it has not followed) moves its count.`);
+  lines.push(linked === s.axons_linked
+    ? `cyberlinked pairs: the explorer knows ${grp(s.axons_linked)} (genesis frames and ${grp(s.chain_cyberlinks)} cyberlink${s.chain_cyberlinks === 1 ? '' : 's'} signed on chain); the node's /stats says ${grp(linked)} — equal.`
+    : `cyberlinked pairs: the explorer knows ${grp(s.axons_linked)}, the node's /stats says ${grp(linked)} — /stats counts every pair ever cyberlinked, also those whose weight is 0 and that are absent from φ*.`);
+  lines.push(`genesis weights: ${grp(s.genesis_frames)} frames by ${grp(s.genesis_authors)} authors, Σ G = ${amtc(s.genesis_total)}, ${grp(s.genesis_at_floor)} frames at the floor of 1 — recomputed from the genesis export and the same as the node's rule.`);
+  return `<p class="note">sanity · ${lines.join('<br>')}</p>`;
+};
+
+async function focusAxons(st) {
+  const a = await file('axons.json');
+  FX.axons = a;
+  viewLive = () => (LIVE.st['last-settled'] !== st['last-settled'] ? render(true) : null);
+  const kick = `<p class="kick">focus · axons · ${esc(st.chain)}</p><h1>top <em>axons</em></h1>`;
+  if (!a) return `${kick}${focusSeg('axons')}<div class="empty">the axon index comes from the explorer's index (data/axons.json), which is not served here yet.</div>`;
+  const tot = big(a.sanity && a.sanity.flow_total);
+  const first = a.rows[0];
+  const shown = a.rows.slice(0, 10).reduce((s, r) => s + big(r[2]), 0n);
+  return `${kick}<p class="sub">epoch ${grp(a.epoch)} · boundary ${hlink(a.boundary)} · computed ${ago(a.generated)}</p>
+  ${focusSeg('axons')}
+  <p class="lede">an axon is the pair p → q that cyberlinks join. its weight is A = max(0, G + S⁺ − S⁻): G the genesis weight (each genesis author's native balance spread evenly over its frames, at least 1 per frame), S⁺ the stake on it with valence +1 or 0, S⁻ the stake with valence −1, at the epoch's boundary (<a href="${SPEC}#41-genesis-weights" target="_blank" rel="noopener">chain-economy §4.1–4.3</a>). axons rank by focus flow = φ*(p) · A(p → q) ÷ Σ A(p → ·), the share of p's focus that diffusion sends along this axon. φ*'s tri-kernel also springs, heats and teleports a ground of ⌊in(p) / 4⌋ (§4.4); flow is the diffusion split of p's focus, not a solve of its own.</p>
+  <div class="tiles">${tile('axons present', grp(a.axons), `A &gt; 0 at height ${grp(a.boundary)}`, 'hero')}${tile('Σ flow', pct(tot, SCALE), 'of all focus, carried by axons')}${tile('top 10', pct(shown, SCALE), 'of all focus flows along them')}${first ? tile('the first', pct(big(first[2]), SCALE), `${short(a.particles[first[0]][0])} → ${short(a.particles[first[1]][0])}`) : ''}</div>
+  <h2>by focus flow</h2><div id="fx-axons">${axonTable()}</div>
+  ${sanityNote(a)}
+  <p class="note">raw data: <a href="${DATA}/axons.json">axons.json</a> (top ${grp(a.rows.length)}) · recomputed once per settled epoch.</p>`;
+}
+
+const AX_HEAD = ['#', 'p · its focus', '~', 'q · its focus', '>flow', '>of p\'s out~', '>weight A', '>stake now ±~', '>authors~'];
+function axonTable() {
+  const a = FX.axons; const P = a.particles;
+  const pc = (i) => { const [id, phi, cid] = P[i]; return `${ref('particle', id)}${gw(cid)}<small class="sh">${shr(phi)}</small>`; };
+  const rows = a.rows.slice(0, FX.aShown).map((r, i) => {
+    const out = big(r[10]); const sharePct = out ? `${(Number((big(r[3]) * 1000000n) / out) / 10000).toFixed(2)}${SEP}%` : '—';
+    const stake = big(r[7]) || big(r[8]) ? `${big(r[7]) ? `<span class="pos">+</span>${amtc(r[7])}` : ''}${big(r[8]) ? ` <span class="neg">−</span>${amtc(r[8])}` : ''}` : '<span class="mute">—</span>';
+    return tds([grp(i + 1), pc(r[0]), '<span class="mute">→</span>', pc(r[1]), pct(big(r[2]), SCALE), sharePct,
+      `<span title="G ${grp(r[4])} + S⁺ ${grp(r[5])} − S⁻ ${grp(r[6])} at the boundary">${amtc(r[3])}</span>`, stake, grp(r[9])], AX_HEAD);
+  });
+  const more = a.rows.length > FX.aShown ? `<div class="pager"><button class="more" data-more="axons">show ${grp(Math.min(100, a.rows.length - FX.aShown))} more of ${grp(a.rows.length)}</button></div>` : '';
+  return table(AX_HEAD, rows, 'no axon carries focus yet') + more;
+}
+
+const N_COLS = [['f', 'focus authored'], ['links', 'links'], ['gb', 'genesis balance'], ['stake', 'stake now'], ['earned', 'earned'], ['bal', 'balance']];
+const nKey = (r, k) => (k === 'f' ? r.f : k === 'links' ? r.links : k === 'gb' ? Number(r.gb) : k === 'stake' ? Number(r.sa) + Number(r.sp) : k === 'earned' ? Number(r.earned) : FX.bal.has(r.n) ? Number(FX.bal.get(r.n)) : -1);
+
+async function focusNeurons(st) {
+  const n = await file('neurons.json');
+  FX.neurons = n;
+  viewLive = () => (LIVE.st['last-settled'] !== st['last-settled'] ? render(true) : null);
+  const kick = `<p class="kick">focus · neurons · ${esc(st.chain)}</p><h1>top <em>neurons</em></h1>`;
+  if (!n) return `${kick}${focusSeg('neurons')}<div class="empty">the neuron index comes from the explorer's index (data/neurons.json), which is not served here yet.</div>`;
+  setTimeout(balances, 0);
+  const r0 = n.rows[0];
+  const withF = n.rows.filter((r) => r.f > 0).length;
+  return `${kick}<p class="sub">epoch ${grp(n.epoch)} · ${grp(n.neurons)} neurons with cyberlinks, stake or earnings · computed ${ago(n.generated)}</p>
+  ${focusSeg('neurons')}
+  <p class="lede">focus authored = Σ over the axons a neuron cyberlinked or staked of the axon's focus flow × the neuron's part of the axon's weight: its genesis weight on the axon plus its stake for, minus its stake against (so the parts of one axon add up to 1, and stake against counts negative). genesis authors are legacy addresses mapped to neuron ids; both are shown where the genesis export knows the address. balance is read from the node for the rows on screen.</p>
+  <div class="tiles">${tile('neurons', grp(n.neurons), `${grp(withF)} author focus`, 'hero')}${r0 ? tile('the first', `${r0.f >= 0.0001 ? (100 * r0.f).toFixed(2) : r0.f}<span class="u">%</span>`, `of all focus, authored by ${short(r0.n)}`) : ''}</div>
+  <h2>by focus authored</h2><div id="fx-neurons">${neuronTable()}</div>
+  <p class="note">links = genesis frames + cyberlinks signed on chain · genesis balance = native balance in the genesis file, spread over the author's frames as its genesis weight · stake now = active (valence ≠ 0) / passive (valence 0) · earned = Σ payouts it owns in the settled epochs · raw data: <a href="${DATA}/neurons.json">neurons.json</a>.</p>`;
+}
+
+function neuronTable() {
+  const n = FX.neurons; const k = FX.nSort; const d = FX.nDir;
+  const sorted = n.rows.slice().sort((a, b) => d * (nKey(a, k) - nKey(b, k)) || a.rank - b.rank);
+  const th = (key, label) => `<button class="srt${key === k ? ' on' : ''}" data-sort="${key}">${label}${key === k ? (d < 0 ? ' ↓' : ' ↑') : ''}</button>`;
+  const head = ['#', 'neuron · legacy address', ...N_COLS.map(([key, label], i) => `>${th(key, label)}${i === 2 || i === 4 ? '~' : ''}`)];
+  const rows = sorted.slice(0, FX.nShown).map((r) => {
+    const fpc = r.f ? `${r.f < 0 ? '−' : ''}${Math.abs(100 * r.f) >= 0.0001 ? Math.abs(100 * r.f).toFixed(4) : Math.abs(100 * r.f).toExponential(1)}${SEP}%` : '0';
+    const stake = big(r.sa) || big(r.sp) ? `${amtc(r.sa)}<small class="sh">passive ${amtc(r.sp)}</small>` : '<span class="mute">—</span>';
+    return tds([grp(r.rank), `${ref('neuron', r.n)}${r.addr ? `<small class="sh" title="${esc(r.addr)}">${short(r.addr)}</small>` : ''}`, fpc, grp(r.links), amtc(r.gb), stake, big(r.earned) ? amtc(r.earned) : '<span class="mute">0</span>',
+      `<span id="bal-${r.n}">${FX.bal.has(r.n) ? amtc(FX.bal.get(r.n)) : '<span class="mute">…</span>'}</span>`], head);
+  });
+  const more = sorted.length > FX.nShown ? `<div class="pager"><button class="more" data-more="neurons">show ${grp(Math.min(100, sorted.length - FX.nShown))} more of ${grp(sorted.length)}</button></div>` : '';
+  return table(head, rows, 'no neuron yet') + more;
+}
+
+// the node's balance of the neurons on screen: a few at a time, each once
+let balBusy = false;
+async function balances() {
+  if (balBusy || !FX.neurons) return; balBusy = true;
+  try {
+    const want = [...document.querySelectorAll('[id^="bal-"]')].map((el) => el.id.slice(4)).filter((id) => !FX.bal.has(id));
+    for (let i = 0; i < want.length; i += 3) {
+      const got = await Promise.all(want.slice(i, i + 3).map((id) => api(`/balance/${id}`).then((b) => [id, b]).catch(() => [id, null])));
+      for (const [id, b] of got) {
+        if (!b) continue;
+        FX.bal.set(id, String(b.balance));
+        const el = document.getElementById(`bal-${id}`); if (el) el.innerHTML = amtc(b.balance);
+      }
+      await new Promise((r) => setTimeout(r, 400));
+      if (!$('#fx-neurons')) break;
+    }
+  } finally { balBusy = false; }
 }
 
 /* ------------------------------------------------------------------ staking */
@@ -713,7 +965,7 @@ async function staking() {
 
 /* ------------------------------------------------------------------ history: canvas charts, no library */
 const CH = { range: 'all', data: null, at: 0 };
-const COL = { pink: '#ff2d92', band: 'rgba(255,45,146,.20)', blue: '#00b8ff', grid: 'rgba(255,255,255,.08)', axis: '#8a8a8a', ink: '#f2f2f2', target: 'rgba(255,255,255,.45)' };
+const COL = { pink: '#ff2d92', band: 'rgba(255,45,146,.20)', blue: '#00b8ff', green: '#00ff41', red: '#ff1a00', none: '#6a6a6a', grid: 'rgba(255,255,255,.08)', axis: '#8a8a8a', ink: '#f2f2f2', target: 'rgba(255,255,255,.45)' };
 const CHARTS = [
   { key: 'hr', lo: 'hr_lo', hi: 'hr_hi', title: 'hashrate', unit: 'H/s', note: 'Σ work ÷ Δt per bin (at least 12 blocks); the band is the range of a 12-block rolling estimate inside the bin', fmt: (v) => si(v, 'H/s') },
   { key: 'd', lo: 'd_lo', hi: 'd_hi', title: 'difficulty', unit: 'hashes', note: 'expected hashes per block, 2^256 ÷ (target + 1); mean and range per bin', fmt: (v) => si(v) },
@@ -867,7 +1119,8 @@ const ROUTES = [
   [/^epoch\/(\d+)$/, epoch, 'epochs'],
   [/^staking$/, staking, 'staking'],
   [/^history$/, history, 'history'],
-  [/^focus$/, focus, 'focus'],
+  [/^focus$/, () => focus(''), 'focus'],
+  [/^focus\/(axons|neurons)$/, focus, 'focus'],
   [/^search\/(.+)$/, search, ''],
 ];
 let gen = 0;
@@ -878,7 +1131,7 @@ async function render(soft) {
   const hit = ROUTES.find(([re]) => re.test(low));
   const view = $('#view');
   document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', !!hit && a.dataset.tab === hit[2]));
-  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, blocks, block, tx, neuron, particle, card, epochs, epoch, staking, history and focus'); return; }
+  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, blocks, block, tx, neuron, particle, card, epochs, epoch, staking, history and focus (particles, axons, neurons)'); return; }
   if (!soft) { viewLive = null; view.innerHTML = `<p class="muted pad">reading the node…</p>`; }
   try {
     const html = await hit[1](...(low.match(hit[0]).slice(1)));
@@ -898,7 +1151,7 @@ async function render(soft) {
 
 window.addEventListener('hashchange', () => { render(false); window.scrollTo(0, 0); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { nextPoll = 0; tick(); } });
-window.addEventListener('resize', () => { clearTimeout(CH.rz); CH.rz = setTimeout(drawAll, 120); });
+window.addEventListener('resize', () => { clearTimeout(CH.rz); CH.rz = setTimeout(() => { drawAll(); drawFocusStake(); }, 120); });
 setInterval(tick, TICK);
 
 $('#search').addEventListener('submit', (e) => {
@@ -911,6 +1164,13 @@ let toastT = 0;
 document.addEventListener('click', async (e) => {
   const r = e.target.closest('[data-range]');
   if (r) { CH.range = r.dataset.range; document.querySelectorAll('#ranges button').forEach((b) => b.classList.toggle('on', b === r)); drawAll(); return; }
+  const so = e.target.closest('[data-sort]');
+  if (so && FX.neurons) { const k = so.dataset.sort; FX.nDir = FX.nSort === k ? -FX.nDir : -1; FX.nSort = k; $('#fx-neurons').innerHTML = neuronTable(); balances(); return; }
+  const mo = e.target.closest('[data-more]');
+  if (mo) {
+    if (mo.dataset.more === 'axons') { FX.aShown += 100; $('#fx-axons').innerHTML = axonTable(); } else { FX.nShown += 100; $('#fx-neurons').innerHTML = neuronTable(); balances(); }
+    return;
+  }
   const el = e.target.closest('[data-copy]'); if (!el) return;
   e.preventDefault();
   const text = el.dataset.copy;
