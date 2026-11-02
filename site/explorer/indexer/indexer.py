@@ -15,6 +15,9 @@ tip and truncates the tail), and every --publish seconds writes three static fil
                 with what each paid; earned per position = Σ payouts of its card
   summary.json  tip, chainwork, recent hashrate and block time, totals, top miners
 
+every --network-every seconds (network.py): network.json — the nodes the node sees on the wire and the ones the chain
+announces, placed by DB-IP Lite (--geo), named by --nodes.
+
 and once per settled epoch (focus.py, in a thread): the full φ* of the epoch into --data/focus/<epoch>.json (the node keeps
 only the last one), and axons.json, neurons.json, particles.json, phi/<xx>.json from φ*, the genesis export under
 --genesis and the cyberlinks in the blocks.
@@ -39,6 +42,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
 from focus import FocusIndex
+from network import Network
 
 TARGET = 30                 # s per block, the ASERT target (cybernode specs/chain.md)
 ROLL = 12                   # blocks in the rolling hashrate estimate behind a bin's min/max
@@ -509,6 +513,9 @@ def main():
     ap.add_argument('--points', type=int, default=2000, help='max bins per series')
     ap.add_argument('--genesis', default='/srv/edge/data/explorer/genesis', help='the genesis export (links.tsv, balances.tsv, accounts.tsv, particles.tsv)')
     ap.add_argument('--focus-rate', type=float, default=50.0, help='/focus/<particle> reads per second when recording an epoch')
+    ap.add_argument('--geo', default='/srv/edge/data/explorer/geo', help='DB-IP Lite city CSVs (dbip-city-lite-YYYY-MM.csv.gz), fetched monthly')
+    ap.add_argument('--nodes', default=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nodes.toml'), help='names of the nodes we run')
+    ap.add_argument('--network-every', type=float, default=30.0, help='seconds between reads of /peers for network.json')
     ap.add_argument('--once', action='store_true', help='catch up, publish once, exit')
     a = ap.parse_args()
 
@@ -520,7 +527,8 @@ def main():
     fx = FocusIndex(ix, a.genesis, a.focus_rate) if os.path.exists(os.path.join(a.genesis, 'links.tsv')) else None
     if not fx:
         log(f'{a.genesis}/links.tsv: not found; the axon and neuron index is off')
-    last_pub, backoff, eco = 0.0, 1.0, {}
+    net = Network(node, a.data, a.site, a.geo, a.nodes)
+    last_pub, last_net, backoff, eco = 0.0, 0.0, 1.0, {}
     with ThreadPoolExecutor(max_workers=a.workers) as pool:
         while not stop:
             try:
@@ -542,6 +550,14 @@ def main():
                         if fx and fx.busy:
                             fx.busy.join()
                         break
+                if caught_up and time.time() - last_net >= a.network_every:
+                    last_net = time.time()
+                    try:
+                        net.tick(ix)
+                    except Down:
+                        raise
+                    except Exception as e:     # the network tab is a side view: its failure never stops the index
+                        log(f'network: {type(e).__name__}: {e}')
                 backoff = 1.0
                 if caught_up:
                     time.sleep(a.poll)

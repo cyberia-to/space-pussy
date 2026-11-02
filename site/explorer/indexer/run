@@ -3,11 +3,14 @@
 # reads the edge's pussy-rc node (127.0.0.1:7783; `pussy` at genesis: 7781), writes only /srv/edge/data/explorer/ and the
 # site's explorer/data/. --genesis holds the TSVs of `soft3 genesis build --chain pussy-rc … --export DIR` (byte-identical
 # genesis to the node's), the input of the axon and neuron index; without it that index is off and the rest runs.
-# runs as `cyber`, the unprivileged user boot.sh recreates on every container restart.
+# --geo holds DB-IP Lite's monthly dbip-city-lite-YYYY-MM.csv.gz (fetched by the indexer when missing) for network.json;
+# --nodes names the nodes we run. runs as `cyber`, the unprivileged user boot.sh recreates on every container restart.
 exec 2>&1
 cd "$(dirname "$0")" || exit 1
 exec chpst -u cyber:cyber /usr/bin/python3 -u ./indexer.py \
   --node http://127.0.0.1:7783 \
   --data /srv/edge/data/explorer \
   --site /var/www/burial/snapshot-pussy/site/explorer/data \
-  --genesis /srv/edge/data/explorer/genesis
+  --genesis /srv/edge/data/explorer/genesis \
+  --geo /srv/edge/data/explorer/geo \
+  --nodes ./nodes.toml

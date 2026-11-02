@@ -1,6 +1,6 @@
 /* spacepussy.ai/explorer — a static page over a node's read API (cybernode rs/src/node/chain_routes.rs)
    and the files of its indexer (site/explorer/indexer: data/history.json, stakes.json, summary.json, and once per settled epoch
-   axons.json, neurons.json, particles.json, phi/<xx>.json).
+   axons.json, neurons.json, particles.json, phi/<xx>.json; network.json for the network tab, drawn by network.js).
    the node answers at /explorer/api/<path> on the same origin; ?api=<base> points the page at another node.
    live: /tip once a second while the tab is visible, /status every few seconds and on every new block.
    no build, no framework: one file, hash routes, big integers kept as strings or BigInt, never floats for amounts. */
@@ -1087,6 +1087,20 @@ function drawChart(i, c, R) {
   cv.onmouseleave = () => { $(`#ct-${i}`).hidden = true; drawChart(i, c, R); };
 }
 
+/* ------------------------------------------------------------------ network: the globe lives in network.js, loaded on first visit */
+let netJs = null;
+async function network() {
+  if (!netJs) {
+    netJs = new Promise((ok, no) => {
+      const s = document.createElement('script'); s.src = 'network.js?v=1';
+      s.onload = ok; s.onerror = () => { netJs = null; no(new Error('network.js did not load')); };
+      document.head.append(s);
+    });
+  }
+  await netJs;
+  return netView();   // network.js
+}
+
 /* ------------------------------------------------------------------ search, routing */
 function notFound(what, why) {
   return `<p class="kick">not found</p><h1>${what}</h1><div class="empty">${esc(why || 'this node does not know it')}.</div><p class="note"><a href="#/">back to the overview</a></p>`;
@@ -1121,6 +1135,7 @@ const ROUTES = [
   [/^history$/, history, 'history'],
   [/^focus$/, () => focus(''), 'focus'],
   [/^focus\/(axons|neurons)$/, focus, 'focus'],
+  [/^network$/, network, 'network'],
   [/^search\/(.+)$/, search, ''],
 ];
 let gen = 0;
@@ -1131,7 +1146,7 @@ async function render(soft) {
   const hit = ROUTES.find(([re]) => re.test(low));
   const view = $('#view');
   document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', !!hit && a.dataset.tab === hit[2]));
-  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, blocks, block, tx, neuron, particle, card, epochs, epoch, staking, history and focus (particles, axons, neurons)'); return; }
+  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, blocks, block, tx, neuron, particle, card, epochs, epoch, staking, history, focus (particles, axons, neurons) and network'); return; }
   if (!soft) { viewLive = null; view.innerHTML = `<p class="muted pad">reading the node…</p>`; }
   try {
     const html = await hit[1](...(low.match(hit[0]).slice(1)));
