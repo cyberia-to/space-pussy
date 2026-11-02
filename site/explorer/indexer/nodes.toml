@@ -1,0 +1,18 @@
+# the nodes we run on pussy-rc — their names on the network tab (network.py). endpoint = the radio endpoint id
+# (/peers, /status `endpoint:`); neuron = the node's neuron, the default hash of its radio key when the node runs
+# without --neuron (cybernode rs/src/node/chain_node.rs; both run without it, 2026-11-02; values from cyber-hemera 0.4);
+# miner = where its miner's coinbase goes; ip only places the dot and is never published; a node behind NAT has none.
+
+[[node]]
+name = "edge-b"
+role = "the explorer's node, public at :7793/udp"
+endpoint = "54471c984e8949e006b3119c93291250930b743b1f200d69d39711af8d99ba64"
+neuron = "0fd8265fa2a1dc619b6180747d220d1b687f433ef4c3d850cb4624c52d25c9a2"
+ip = "213.58.173.242"
+
+[[node]]
+name = "agent-a"
+role = "the miner, behind NAT"
+endpoint = "016530f07b1efdf080aced7aa5c5a1495bbbf1cbe9916bdf173ce074c8073e0b"
+neuron = "523c2195e75ea8b58f284bae322aebc3e83ba5b525fef97cea32e505a212ca06"
+miner = "658dc862f27a8021de29cee546417aec7443745f7b50ccec460ba486583edd28"
