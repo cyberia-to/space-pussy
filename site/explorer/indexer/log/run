@@ -1,0 +1,2 @@
+#!/bin/sh
+exec svlogd -tt /srv/edge/log/explorer-index
