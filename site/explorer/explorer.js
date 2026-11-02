@@ -372,6 +372,7 @@ function overviewTiles(stk) {
     tile('neurons', grp(st.neurons), 'keys with state'),
     tile('particles', grp(particles), 'in the graph of the last settlement'),
     tile('axons', grp(st.axons), 'cyberlinked pairs p → q'),
+    earnTile(),
   ].join('');
 }
 
@@ -509,7 +510,8 @@ const pAnchor = (p) => (p ? `<a href="#/particle/${esc(p)}">${esc(p)}</a>` : '�
 /* ------------------------------------------------------------------ neuron, card */
 async function neuron(id) {
   const st = await status();
-  const [bal, nonce, cards, stk] = await Promise.all([api(`/balance/${id}`), api(`/nonce/${id}`), api(`/cards/${id}`), file('stakes.json')]);
+  const [bal, nonce, cards, stk, ear] = await Promise.all([api(`/balance/${id}`), api(`/nonce/${id}`), api(`/cards/${id}`), file('stakes.json'), file('earnings.json')]);
+  const mined = ear && ear.miners && ear.miners.all ? ear.miners.all.rows.find((r) => r.m === id) : null;
   const last = Number(st['last-settled'] || 0);
   const eps = last ? await api(`/epochs?after=${Math.max(0, last - 60)}&limit=60`).catch(() => null) : null;
   const pays = [];
@@ -528,7 +530,7 @@ async function neuron(id) {
   const quiet = big(b.balance) === 0n && !Number(nonce && nonce.confirmed) && !cs.length;
   return `<p class="kick">neuron</p><h1>neuron <em>${short(id)}</em></h1><p class="sub">${full(id)}</p>
   ${quiet ? `<p class="note">this key holds nothing and has signed nothing on this chain. if it is a particle, see <a href="#/particle/${id}">its focus</a>.</p>` : ''}
-  <h2>balance</h2><div class="tiles">${tile('balance', amtc(b.balance), `at height ${grp(b.height)}`, 'hero')}${tile('spendable', amtc(b.spendable), locked > 0n ? `${grp(locked.toString())} held but not yet spendable (maturing coinbase)` : 'all of it spendable')}${tile('nonce', grp(nonce ? nonce.confirmed : '—'), `next to sign: ${grp(nonce ? nonce.nonce : '—')}`)}${tile('positions', grp(cs.length), cs.length ? `staked ${grp(cs.reduce((s, c) => s + big(c.stake), 0n).toString())} · earned ${grp(earnedAll.toString())}` : 'staked cyberlinks authored')}</div>
+  <h2>balance</h2><div class="tiles">${tile('balance', amtc(b.balance), `at height ${grp(b.height)}`, 'hero')}${tile('spendable', amtc(b.spendable), locked > 0n ? `${grp(locked.toString())} held but not yet spendable (maturing coinbase)` : 'all of it spendable')}${tile('nonce', grp(nonce ? nonce.confirmed : '—'), `next to sign: ${grp(nonce ? nonce.nonce : '—')}`)}${tile('positions', grp(cs.length), cs.length ? `staked ${grp(cs.reduce((s, c) => s + big(c.stake), 0n).toString())} · earned ${grp(earnedAll.toString())}` : 'staked cyberlinks authored')}${mined ? tile('mined', amtc(mined.earned), `${pl(mined.blocks, 'block')} (${fpct(mined.share)} of all) from ${hlink(mined.first)} to ${hlink(mined.last)} · <a href="#/earnings/miners">top miners →</a>`) : ''}</div>
   <p class="note">token ${short(b.token)}${cp(b.token || '')} · ${esc(b.denom || DENOM)} · supply ${grp(b.supply)}</p>
   <h2>staked positions</h2>${table(cHead, cRows, 'no positions: no staked cyberlink authored by this neuron')}
   <h2>payouts</h2>${table(pHead, pRows, `no payouts in the last ${grp(Math.min(last, 60))} settled epochs`)}`;
@@ -681,7 +683,7 @@ const dshare = (cur, prev) => {
   return `<span class="${x > 0 ? 'pos' : 'neg'}">${x > 0 ? '+' : '−'}${s}${SEP}pp</span>`;
 };
 const gw = (cid) => (cid ? `<a class="gw" href="${esc(GATEWAY + cid)}" target="_blank" rel="noopener" title="the content behind it: ${esc(cid)}">↗</a>` : '');
-const FOCUS_TABS = [['', 'particles'], ['axons', 'axons'], ['neurons', 'neurons']];
+const FOCUS_TABS = [['', 'particles'], ['axons', 'axons'], ['neurons', 'neurons'], ['moved', 'who moved focus'], ['graph', 'graph']];
 const focusSeg = (on) => `<div class="seg" role="group" aria-label="index">${FOCUS_TABS.map(([k, l]) => `<a class="${on === k ? 'on' : ''}" href="#/focus${k ? '/' + k : ''}">${l}</a>`).join('')}</div>`;
 const SPEC = 'https://github.com/cyberia-to/cybernode/blob/main/specs/chain-economy.md';
 const FX = { chart: null, axons: null, aShown: 50, neurons: null, nSort: 'f', nDir: -1, nShown: 50, bal: new Map() };
@@ -690,6 +692,8 @@ async function focus(sub) {
   const st = await status();
   if (sub === 'axons') return focusAxons(st);
   if (sub === 'neurons') return focusNeurons(st);
+  if (sub === 'moved') return focusMoved(st);
+  if (sub === 'graph') return focusGraph(st);
   const [r, pj, stk] = await Promise.all([req('/focus?top=100'), file('particles.json'), file('stakes.json')]);
   if (!r.ok) return `<p class="kick">focus</p><h1>focus <em>φ*</em></h1>${focusSeg('')}<div class="empty">no settled epoch with φ* on this node yet.</div>`;
   const f = r.data; const top = f.top || [];
@@ -972,6 +976,7 @@ const CHARTS = [
   { key: 'bt', lo: 'bt_lo', hi: 'bt_hi', title: 'block time', unit: 's', note: 'mean per bin (at least 12 blocks); the band is the fastest and slowest block; the dashed line is the 30 s target', fmt: (v) => `${v === null ? '—' : Number(v).toFixed(1)}${SEP}s`, target: TARGET, linear: true },
   { key: 'tx', title: 'transactions', unit: 'per bin', note: 'transactions per bin, coinbase excluded', fmt: (v) => grp(v), bars: true, linear: true },
   { key: 'sa', key2: 'st', title: 'stake', unit: '', note: 'active (valence ≠ 0) and total stake at the end of each bin', fmt: (v) => si(v), linear: true, legend: ['active', 'total'] },
+  { key: 'fb', title: 'to stakers', unit: 'bps', note: 'focus_bps in force: the share of each block\'s subsidy that goes to the focus pool, θ<sup>½</sup> in basis points, fixed at every boundary (chain-economy §6.1); the rest pays the miner. <a href="#/earnings/emission">emission →</a>', fmt: (v) => (v === null || v === undefined ? '—' : bps(v)), linear: true },
 ];
 
 async function history() {
@@ -1026,6 +1031,7 @@ function drawChart(i, c, R) {
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
   const xs = R.t; const n = xs.length; if (!n) return;
   const ys = R[c.key]; const lo = c.lo ? R[c.lo] : null; const hi = c.hi ? R[c.hi] : null; const y2 = c.key2 ? R[c.key2] : null;
+  if (!ys) { g.fillStyle = COL.axis; g.font = '11px "JetBrains Mono", Menlo, monospace'; g.fillText('not in this index yet', 12, 24); return; }
   const vals = []; for (let k = 0; k < n; k++) { for (const a of [ys, hi, lo, y2]) if (a && a[k] !== null && isFinite(a[k])) vals.push(a[k]); }
   if (!vals.length) return;
   let ymin = c.bars ? 0 : Math.min(...vals); let ymax = Math.max(...vals);
@@ -1101,6 +1107,457 @@ async function network() {
   return netView();   // network.js
 }
 
+/* ------------------------------------------------------------------ earnings: what the system pays for
+   data/earnings.json (per block: the emission ledger, the miners) and data/payouts.json (per settlement: receipts, stakers, yield),
+   written by indexer/earnings.py from chain data only. the node publishes per payout {card, owner, amount} and no per-position credit. */
+const EA = { mw: 'all', shown: { paid: 20, stakers: 50, pos: 25, ypos: 50, yn: 25, led: 36, links: 20, parts: 20, txs: 40 }, gen: null, charts: [], me: null };
+const EARN_TABS = [['', 'summary'], ['miners', 'top miners'], ['stakers', 'top stakers'], ['yield', 'yield'], ['paid', 'paid knowledge'], ['emission', 'emission']];
+const earnSeg = (on) => `<div class="seg" role="group" aria-label="earnings">${EARN_TABS.map(([k, l]) => `<a class="${on === k ? 'on' : ''}" href="#/earnings${k ? '/' + k : ''}">${l}</a>`).join('')}</div>`;
+// a fraction as a percentage with enough digits to see it
+const fpct = (x) => {
+  if (x === null || x === undefined || !isFinite(x)) return '—';
+  const a = Math.abs(100 * x); const s = a === 0 ? '0' : a >= 1 ? a.toFixed(2) : a >= 0.0001 ? a.toFixed(4) : a.toExponential(2);
+  return `${x < 0 ? '−' : ''}${s}${SEP}%`;
+};
+const ratio = (n, d) => (d > 0n ? Number((n * 1000000000n) / d) / 1e9 : null);
+const nats = (raw) => {
+  if (raw === null || raw === undefined) return '—';
+  const x = Number(big(raw)) / 2 ** 60; const a = Math.abs(x);
+  return `${x < 0 ? '−' : ''}${a === 0 ? '0' : a >= 0.01 ? a.toFixed(4) : a.toExponential(3)}${SEP}nats`;
+};
+// the price of knowledge: raw units paid per millinat of syntropy gained, paid · 2^60 ÷ (Δsyntropy · 1,000); none when nothing was gained
+const perMilli = (paid, dsyn) => (big(dsyn) > 0n && big(paid) > 0n ? ((big(paid) * SCALE) / (big(dsyn) * 1000n)).toString() : null);
+// raw units paid per 1 % of all focus that changed place, paid · 2^60 ÷ (tv · 100)
+const perPct = (paid, tv) => (big(tv) > 0n && big(paid) > 0n ? ((big(paid) * SCALE) / (big(tv) * 100n)).toString() : null);
+const pl = (n, w) => `${grp(n)} ${w}${Number(n) === 1 ? '' : 's'}`;
+const elink = (e) => (e ? `<a href="#/epoch/${e}">${grp(e)}</a>` : '—');
+const moreBtn = (key, have, total) => (total > have ? `<div class="pager"><button class="more" data-emore="${key}">show ${grp(Math.min(100, total - have))} more of ${grp(total)}</button></div>` : '');
+
+function earnTile() {
+  const e = LIVE.summary && LIVE.summary.earnings; if (!e) return '';
+  return tile('paid to stakers', amtc(e.to_stakers), `for knowledge, all time · to miners ${grp(e.to_miners)} for header work · ${grp(e.pool)} held in the pool · <a href="#/earnings">earnings →</a>`, 'wide stake');
+}
+
+async function earn(sub) {
+  const st = await status();
+  const [E, P] = await Promise.all([file('earnings.json'), file('payouts.json')]);
+  const head = `<p class="kick">earnings · ${esc(st.chain)}</p><h1>what the system <em>pays for</em></h1>`;
+  if (!E) return `${head}${earnSeg(sub)}<div class="empty">the earnings come from the explorer's index (data/earnings.json), which is not served here yet.</div>`;
+  const watch = ['stakers', 'yield', 'paid'].includes(sub) ? 'payouts.json' : 'earnings.json';
+  EA.gen = (watch === 'payouts.json' ? P : E) || {};
+  viewLive = async () => { const f = await file(watch); if (f && f.generated !== EA.gen.generated) render(true); };
+  EA.charts = [];
+  const body = sub === 'miners' ? earnMiners(E) : sub === 'stakers' ? earnStakers(E, P, st) : sub === 'yield' ? earnYield(E, P, st)
+    : sub === 'paid' ? await earnPaid(E, P) : sub === 'emission' ? earnEmission(E) : earnSummary(E, P);
+  setTimeout(() => { drawEarnCharts(); hydratePv(); }, 0);
+  return `${head}<p class="sub">index at height ${grp(E.tip)} · written ${ago(E.generated)} · ${pl(E.totals.epochs_settled, 'epoch')} settled</p>${earnSeg(sub)}${body}`;
+}
+
+const lastTheta = (E) => { for (let i = E.ledger.length - 1; i >= 0; i--) if (E.ledger[i][13] !== null) return E.ledger[i][13]; return null; };
+function earnStrip(E) {
+  const T = E.totals; const minted = big(T.minted);
+  const paidEpochs = E.ledger.filter((r) => r[7] !== null && big(r[7]) > 0n).length;
+  return `<div class="tiles">
+    ${tile('to miners', amtc(T.to_miners), `for header work: the subsidy minus the pool's cut (${fpct(ratio(big(T.miner_subsidy), minted))} of all minted) plus ${grp(T.fees)} in fees`, 'hero wide')}
+    ${tile('to stakers', amtc(T.paid), `for knowledge: paid at ${pl(paidEpochs, 'settlement')} to positions whose stake raised syntropy · ${fpct(ratio(big(T.paid), minted))} of all minted`, 'wide stake')}
+    ${tile('in the pool', amtc(T.pool), `the cut in, ${grp(T.to_pool)}, minus what settlements paid out · a quarter of it is the next budget`)}
+    ${tile('split now', bps(E.focus_bps_next), `of each block's subsidy goes to the pool: ${grp(E.cut_next)} of ${grp(E.subsidy)} · θ = ${fpct(lastTheta(E))} of supply is active stake`)}
+  </div>${splitBar(E)}`;
+}
+// where every minted unit went: the miners, the stakers, the pool (fees are moved, not minted)
+function splitBar(E) {
+  const T = E.totals; const m = big(T.miner_subsidy); const p = big(T.paid); const pool = big(T.pool); const all = m + p + pool;
+  if (all === 0n) return '';
+  const w = (x) => Math.max(x > 0n ? 0.4 : 0, (ratio(x, all) || 0) * 100);
+  return `<div class="split" title="minted ${grp(T.minted)}"><i class="sm" style="width:${w(m).toFixed(3)}%"></i><i class="sp" style="width:${w(p).toFixed(3)}%"></i><i class="so" style="width:${w(pool).toFixed(3)}%"></i></div>
+  <p class="note split-l"><span><i class="sm"></i>miners ${fpct(ratio(m, all))}</span><span><i class="sp"></i>stakers ${fpct(ratio(p, all))}</span><span><i class="so"></i>pool ${fpct(ratio(pool, all))}</span><span>of the ${amtc(T.minted)} minted in ${grp(E.tip)} blocks</span></p>`;
+}
+
+/* miners */
+const MINER_HEAD = ['#', 'miner', '>blocks', '>share of blocks', '', '>hashrate~', '>earned', '>fees~', 'first block~', 'last block'];
+const minerRows = (w, n) => w.rows.slice(0, n).map((r, i) => tds([grp(i + 1), ref('neuron', r.m), grp(r.blocks), fpct(r.share), `<i class="bar" style="width:${Math.max(1, r.share * 110).toFixed(1)}px"></i>`,
+  `${si(r.hr, 'H/s')}<span class="est">est</span>`, amtc(r.earned), grp(r.fees), `${hlink(r.first)} <span class="mute">${ago(r.first_t)}</span>`, `${hlink(r.last)} <span class="mute">${ago(r.last_t)}</span>`], MINER_HEAD));
+const MW = [['hour', '1 hour'], ['day', '24 hours'], ['all', 'all blocks']];
+function earnMiners(E) {
+  const w = E.miners[EA.mw] || E.miners.all;
+  const top = w.rows[0];
+  return `${earnStrip(E)}
+  <h2>top miners</h2><div class="seg" role="group" aria-label="window">${MW.map(([k, l]) => `<button data-mw="${k}" class="${EA.mw === k ? 'on' : ''}">${l}</button>`).join('')}<span class="mute">heights ${grp(w.from)}–${grp(w.to)}</span></div>
+  <div class="tiles">${tile('blocks', grp(w.blocks), `found in the window by ${pl(w.miners, 'miner')}`, 'hero')}${tile('earned', amtc(w.earned), 'by the miners in the window: subsidy minus the cut, plus fees')}
+    ${tile('hashrate<span class="est">estimate</span>', si(w.hashrate, 'H/s'), 'Σ work ÷ the window\'s span')}${top ? tile('the first', fpct(top.share), `of the blocks: ${short(top.m)}`) : ''}</div>
+  <h2>&nbsp;</h2>${table(MINER_HEAD, minerRows(w, 100), 'no block in this window')}
+  <p class="note">a miner is the key its coinbase pays. earned = Σ over its blocks of SUBSIDY − cut + the block's fees, exactly its coinbase amounts (<a href="${SPEC}#62-coinbase-and-pool" target="_blank" rel="noopener">chain-economy §6.2</a>). share of blocks estimates its share of the hashrate: with n blocks the estimate is off by about 1/√n of itself (±${w.rows[0] ? fpct(1 / Math.sqrt(Math.max(1, w.rows[0].blocks))) : '—'} for the first row). hashrate = its share of the window's work × Σ work ÷ the span; the work of a block is 2^256 ÷ (target + 1).</p>`;
+}
+
+/* stakers and positions */
+const STAKER_HEAD = ['#', 'neuron', '>earned', '>positions', '>stake active', '>passive~', '>per epoch', '>a year', '>paid in~', 'last paid~'];
+const stakerRows = (rows, P, n) => rows.slice(0, n).map((r, i) => tds([grp(i + 1), `${ref('neuron', r.n)}${r.owners ? `<small class="sh">pays to ${pl(r.owners, 'other owner')}</small>` : ''}`, amtc(r.earned), `${grp(r.open)}<span class="mute"> / ${grp(r.positions)}</span>`,
+  amtc(r.sa), amtc(r.sp), fpct(r.y), r.apr === null ? '—' : fpct(r.apr), pl(r.paid, 'epoch'), elink(r.last_paid)], STAKER_HEAD));
+const POS_HEAD = ['#', 'position', 'neuron~', 'p → q', 'valence', '>stake', '>earned', '>epochs held', '>per epoch~', '>a year'];
+const posRows = (rows, P, n) => rows.slice(0, n).map((r, i) => tds([grp(i + 1), r.card ? ref('card', r.card) : '—', ref('neuron', r.n), `${ref('particle', P.particles[r.p])} → ${ref('particle', P.particles[r.q])}`,
+  Number(r.v) === 0 ? '<span class="mute">0 · passive</span>' : val(r.v), r.open ? amtc(r.stake) : '<span class="mute">closed</span>', amtc(r.earned), grp(r.held), fpct(r.y), r.apr === null ? '—' : fpct(r.apr)], POS_HEAD));
+function earnStakers(E, P, st) {
+  if (!P) return `${earnStrip(E)}<div class="empty">the stakers come from the explorer's index (data/payouts.json), which is not served here yet.</div>`;
+  const S = P.stakers; const top = S[0];
+  const sa = S.reduce((s, r) => s + big(r.sa), 0n); const sp = S.reduce((s, r) => s + big(r.sp), 0n);
+  return `${earnStrip(E)}
+  <h2>top stakers</h2><div class="tiles">${tile('earned', amtc(P.earned_total), `by ${pl(S.filter((r) => big(r.earned) > 0n).length, 'neuron')} at ${pl(Object.keys(P.epochs).length, 'settlement')}`, 'hero')}
+    ${tile('stakers', grp(S.length), `neurons with a position · ${grp(P.positions_total)} positions`)}${tile('stake active', amtc(sa.toString()), `valence ≠ 0, the stake that can earn · passive ${grp(sp.toString())}`, 'stake')}
+    ${top && big(top.earned) > 0n ? tile('the first', amtc(top.earned), `earned by ${short(top.n)}`) : ''}</div>
+  <h2>&nbsp;</h2><div id="ea-stakers">${table(STAKER_HEAD, stakerRows(S, P, EA.shown.stakers), 'no staker yet: no cyberlink with amount &gt; 0 on this chain')}${moreBtn('stakers', EA.shown.stakers, S.length)}</div>
+  <h2>top positions</h2><div id="ea-pos">${table(POS_HEAD, posRows(P.positions, P, EA.shown.pos), 'no position yet')}${moreBtn('pos', EA.shown.pos, P.positions.length)}</div>
+  <p class="note">a staker is the neuron that signed the staked cyberlink (the card's author); payouts go to the card's payout owner, which kind 7 can point elsewhere. earned = Σ of its cards' payouts in every settled epoch. per epoch = earned ÷ Σ over settled boundaries of the stake each card held there; a year = per epoch × ${grp(P.epochs_per_year)} epochs (240 blocks × 30 s), simple. <a href="#/earnings/yield">yield →</a> · <a href="#/staking">every position →</a></p>`;
+}
+
+function earnYield(E, P, st) {
+  if (!P) return `<div class="empty">the yields come from the explorer's index (data/payouts.json), which is not served here yet.</div>`;
+  const byApr = (a, b) => (b.apr ?? -1) - (a.apr ?? -1) || (big(b.earned) > big(a.earned) ? 1 : big(b.earned) < big(a.earned) ? -1 : 0);
+  const held = P.positions.filter((r) => r.held > 0).sort(byApr);
+  const neu = P.stakers.filter((r) => big(r.se) > 0n).sort(byApr);
+  const se = P.positions.reduce((s, r) => s + big(r.se), 0n); const earned = P.positions.reduce((s, r) => s + big(r.earned), 0n);
+  const real = se > 0n ? Number((earned * 10n ** 12n) / se) / 1e12 : null;
+  const active = big(st['active-stake']); const inflow = big(E.cut_next) * BigInt(E.epoch_length);
+  const bench = active > 0n ? Number((inflow * 10n ** 12n) / active) / 1e12 : null;
+  const YN_HEAD = ['#', 'neuron', '>stake active', '>Σ stake held', '>earned', '>per epoch', '>a year'];
+  const yn = neu.slice(0, EA.shown.yn).map((r, i) => tds([grp(i + 1), ref('neuron', r.n), amtc(r.sa), amtc(r.se), amtc(r.earned), fpct(r.y), fpct(r.apr)], YN_HEAD));
+  return `<p class="lede">yield = what a position earned ÷ the stake it held, per epoch held: earned ÷ Σ over the settled boundaries of its stake there, then × ${grp(P.epochs_per_year)} epochs a year (240 blocks × 30 s), simple, not compounded. early in a chain these numbers are noisy: a handful of settlements, a few positions, and a position that added stake in a quiet epoch can take its whole cap, 1 % of what it added (<a href="${SPEC}#55-budget-caps-and-rounding" target="_blank" rel="noopener">chain-economy §5.5</a>), which annualizes into a number that will not repeat. read them as the record so far, not a forecast.</p>
+  <div class="tiles">${tile('realized', real === null ? '—' : fpct(real * P.epochs_per_year), `a year: Σ earned ÷ Σ stake held by every position, × ${grp(P.epochs_per_year)} · ${fpct(real)} per epoch`, 'hero')}
+    ${tile('if the pool paid all', bench === null ? '—' : fpct(bench * P.epochs_per_year), `a year, at today's split: the pool's inflow per epoch (240 × ${grp(E.cut_next)}) ÷ the active stake now (${grp(st['active-stake'])}) · the ceiling the economy pays as θ<sup>½</sup> ÷ θ (§6.1)`)}
+    ${tile('positions', grp(held.length), `held stake through at least one settled boundary · of ${grp(P.positions_total)}`)}</div>
+  <h2>yield leaderboard · positions</h2><div id="ea-ypos">${table(POS_HEAD, posRows(held, P, EA.shown.ypos), 'no position has held stake through a settled boundary yet')}${moreBtn('ypos', EA.shown.ypos, held.length)}</div>
+  <h2>yield leaderboard · neurons</h2><div id="ea-yn">${table(YN_HEAD, yn, 'no neuron has held stake through a settled boundary yet')}${moreBtn('yn', EA.shown.yn, neu.length)}</div>
+  <p class="note">passive stake (valence 0) earns nothing by rule and shows 0. Σ stake held counts each settled boundary at which the position had stake, so a position opened in the epoch now running has none yet. the ceiling assumes every epoch's inflow is paid; budgets are a quarter of the pool and only stake that raised syntropy is paid, so the realized number sits below it.</p>`;
+}
+
+/* paid knowledge: every payout as a receipt */
+const pv = (id) => (id ? `<span class="pv" data-pv="${esc(id)}"></span>` : '');
+function receipt(r, P, tvOf) {
+  const [e, card, n, owner, pi, qi, v, stake, added, cap, amount] = r;
+  const ep = P.epochs[e] || []; const paid = big(ep[0]);
+  const capB = big(cap); const capped = capB > 0n && big(amount) >= capB;
+  const p = pi === null ? null : P.particles[pi]; const q = qi === null ? null : P.particles[qi];
+  const m = tvOf.get(e);
+  const price = perMilli(ep[0], ep[3]);
+  return `<div class="rcpt"><div class="rc-h"><span class="rc-e"><a href="#/epoch/${e}">epoch ${grp(e)}</a> · settled at ${ep[4] ? hlink(ep[4]) : '—'}</span><b class="rc-amt">${amtc(amount)}</b><span class="rc-sh">${paid ? `${pct(big(amount), paid)} of the epoch's paid` : ''}</span></div>
+  <div class="rc-link"><div class="rc-pt"><span>p · from</span>${p ? ref('particle', p) : '—'}${pv(p)}</div><div class="rc-ar">→<small>valence ${valSide(v)}</small></div><div class="rc-pt"><span>q · to</span>${q ? ref('particle', q) : '—'}${pv(q)}</div></div>
+  <div class="rc-f"><span>position ${ref('card', card)}</span><span>neuron ${n ? ref('neuron', n) : '—'}</span>${owner && owner !== n ? `<span>paid to ${ref('neuron', owner)}</span>` : ''}
+    <span>stake at the boundary ${amtc(stake)}</span><span>added in the epoch ${amtc(added)}</span><span>cap ${amtc(cap)}${capped ? ' <b class="cap">capped</b>' : capB > 0n ? ` · ${pct(big(amount), capB)} of it` : ''}</span>
+    <span>Δ syntropy of the epoch ${nats(ep[3])}</span>${price ? `<span>price ${amtc(price)} per millinat</span>` : ''}${m && big(m.tv) > 0n ? `<span>the epoch moved ${pct(big(m.tv), SCALE)} of focus</span>` : ''}</div></div>`;
+}
+const valSide = (v) => (v === null || v === undefined ? '—' : val(v));
+
+async function earnPaid(E, P) {
+  if (!P) return `<div class="empty">the receipts come from the explorer's index (data/payouts.json), which is not served here yet.</div>`;
+  const moved = await file('moved.json');
+  const tvOf = new Map(((moved && moved.epochs) || []).map((m) => [m.epoch, m]));
+  const eps = Object.keys(P.epochs).map(Number).sort((a, b) => b - a);
+  const EP_HEAD = ['epoch', '>paid', '>budget', '>rewarded', '>Δ syntropy', '>price per millinat', '>focus moved~', '>price per 1 % moved~'];
+  const epRows = eps.map((e) => {
+    const [paid, budget, rewarded, dsyn] = P.epochs[e]; const m = tvOf.get(e);
+    const pm = perMilli(paid, dsyn); const pp = m ? perPct(paid, m.tv) : null;
+    return tds([elink(e), amtc(paid), amtc(budget), grp(rewarded), nats(dsyn), pm ? amtc(pm) : '<span class="mute">—</span>', m ? pct(big(m.tv), SCALE) : '<span class="mute">not recorded</span>', pp ? amtc(pp) : '<span class="mute">—</span>'], EP_HEAD);
+  });
+  const latest = eps.find((e) => perMilli(P.epochs[e][0], P.epochs[e][3]));
+  const LK_HEAD = ['#', 'p → q', '>paid', '>payouts', '>positions', '>stake now ±~'];
+  const lkRows = P.links.slice(0, EA.shown.links).map((l, i) => tds([grp(i + 1), `<div class="lk2"><span>${ref('particle', P.particles[l[0]])}${pv(P.particles[l[0]])}</span><span class="mute">→</span><span>${ref('particle', P.particles[l[1]])}${pv(P.particles[l[1]])}</span></div>`,
+    amtc(l[2]), grp(l[3]), grp(l[4]), `${big(l[6]) ? `<span class="pos">+</span>${amtc(l[6])}` : ''}${big(l[7]) ? ` <span class="neg">−</span>${amtc(l[7])}` : ''}${!big(l[6]) && !big(l[7]) ? '<span class="mute">—</span>' : ''}`], LK_HEAD));
+  const PP_HEAD = ['#', 'particle', '>paid', '>positions', '>axons into it'];
+  const ppRows = P.paid_particles.slice(0, EA.shown.parts).map((x, i) => tds([grp(i + 1), `${ref('particle', P.particles[x[0]])}${pv(P.particles[x[0]])}`, amtc(x[1]), grp(x[3]), grp(x[4])], PP_HEAD));
+  return `<p class="lede">the heart of it: every payout the chain made, as a receipt. a position is paid at the settlement of the epoch in which it added stake, by its share of the gradient of syntropy along its axon times the stake it added on its side (<a href="${SPEC}#52-attribution-per-position" target="_blank" rel="noopener">chain-economy §5.2–5.5</a>): the network pays for links that make its attention more ordered. the node publishes per payout the card, the owner and the amount; it does not publish the credit x(c) or the attribution a(c) of a position, so the receipts show no credit. stake at the boundary, the stake added and the 1 % cap are replayed from the staking txs.</p>
+  <div class="tiles">${tile('paid for knowledge', amtc(P.earned_total), `in ${pl(P.receipts_total, 'payout')} at ${pl(eps.length, 'settlement')}`, 'hero')}
+    ${tile('price of knowledge', latest ? amtc(perMilli(P.epochs[latest][0], P.epochs[latest][3])) : '—', latest ? `per millinat of syntropy gained, epoch ${grp(latest)}: paid ÷ Δ syntropy` : 'no epoch has paid for a syntropy gain yet')}
+    ${tile('links paid', grp(P.links.length), 'distinct axons p → q with a paid position')}${tile('particles', grp(P.paid_particles.length), 'paid to make attended: positions on axons into them')}</div>
+  <h2>the price per epoch</h2>${table(EP_HEAD, epRows, 'no settlement has paid yet')}
+  <p class="note">Δ syntropy is J(φ*ₑ) − J(φ*ₑ₋₁) from the epoch record, in nats (raw at 2^60). price per millinat = paid × 2^60 ÷ (Δ syntropy × 1,000), raw units of ${esc(DENOM)} per 10^−3 nat. focus moved = ½ Σ |Δφ*| over every particle, from the explorer's record of φ* per epoch (since epoch 14), so price per 1 % moved = paid ÷ (focus moved in %). the budget does not depend on Δ syntropy (§5.2): a quiet epoch carries its accrual.</p>
+  <h2>paid knowledge · receipts</h2><div id="ea-paid">${P.receipts.slice(0, EA.shown.paid).map((r) => receipt(r, P, tvOf)).join('') || '<div class="empty">no payout yet: the first comes at the settlement of an epoch in which a position added stake with valence ≠ 0 on an axon whose gradient is positive.</div>'}${moreBtn('paid', EA.shown.paid, P.receipts.length)}</div>
+  <h2>the links the network paid most for</h2><div id="ea-links">${table(LK_HEAD, lkRows, 'none yet')}${moreBtn('links', EA.shown.links, P.links.length)}</div>
+  <h2>the particles the network paid to make attended</h2><div id="ea-parts">${table(PP_HEAD, ppRows, 'none yet')}${moreBtn('parts', EA.shown.parts, P.paid_particles.length)}</div>
+  <p class="note">previews: each particle's legacy CID from the explorer's map, its first bytes from ${esc(GATEWAY.replace(/^https:\/\//, '').replace(/\/ipfs\/$/, ''))}. raw data: <a href="${DATA}/payouts.json">payouts.json</a>.</p>`;
+}
+
+/* emission */
+function earnEmission(E) {
+  const led = E.ledger; const x = led.map((r) => r[0]);
+  EA.charts = [
+    { id: 'ec-0', x, title: 'the focus pool', series: [{ v: led.map((r) => Number(r[5])), col: COL.blue, bar: true, name: 'cut in' }, { v: led.map((r) => (r[7] === null ? null : Number(r[7]))), col: COL.pink, bar: true, name: 'paid out' }, { v: led.map((r) => (r[9] === null ? null : Number(r[9]))), col: COL.ink, name: 'pool after', dash: true }],
+      tip: (i) => { const r = led[i]; return `<b>epoch ${grp(r[0])}</b><br>cut in ${amtc(r[5])}<br>budget ${r[6] === null ? 'not settled' : amtc(r[6])} · paid ${r[7] === null ? '—' : amtc(r[7])}<br>pool after ${r[9] === null ? '—' : amtc(r[9])}`; } },
+    { id: 'ec-1', x, title: 'the split', series: [{ v: led.map((r) => r[2]), col: COL.pink, name: 'focus_bps in force', step: true }], fmt: (v) => bps(v),
+      tip: (i) => { const r = led[i]; return `<b>epoch ${grp(r[0])}</b><br>${bps(r[2])} of each block's subsidy to the pool<br>${grp(Math.floor(Number(E.subsidy) * r[2] / 10000))} of ${grp(E.subsidy)} per block`; } },
+    { id: 'ec-2', x, title: 'θ = active stake ÷ supply', series: [{ v: led.map((r) => r[13]), col: COL.blue, name: 'θ at the boundary', step: true }], fmt: (v) => fpct(v),
+      tip: (i) => { const r = led[i]; return `<b>boundary of epoch ${grp(r[0])}</b><br>θ = ${fpct(r[13])}<br>active stake ${r[12] === null ? '—' : amtc(r[12])}<br>sets ${r[11] === null ? '—' : bps(r[11])} for epoch ${grp(r[0] + 1)}`; } },
+  ];
+  const LED_HEAD = ['epoch', '>blocks~', '>split', '>to miners', '>fees~', '>to pool', '>budget', '>paid', '>pool after~', '>θ~', '>Δ syntropy~'];
+  const rows = led.slice().reverse().slice(0, EA.shown.led).map((r) => tds([r[6] === null ? `${grp(r[0])} <span class="mute">${r[1] < E.epoch_length ? 'running' : 'unsettled'}</span>` : elink(r[0]), grp(r[1]), bps(r[2]), amtc(r[3]), grp(r[4]), amtc(r[5]),
+    r[6] === null ? '<span class="mute">—</span>' : amtc(r[6]), r[7] === null ? '<span class="mute">—</span>' : amtc(r[7]), r[9] === null ? '—' : amtc(r[9]), r[13] === null ? '—' : fpct(r[13]), r[10] === null ? '—' : nats(r[10])], LED_HEAD));
+  const s = E.sanity || {};
+  const checks = [`focus_bps of ${grp(s.focus_bps_checked)} settled epochs recomputed from the replayed active stake: ${s.focus_bps_mismatch && s.focus_bps_mismatch.length ? `differs in ${s.focus_bps_mismatch.join(', ')}` : 'equal to the records'}`,
+    `pool after of ${grp(s.pool_after_checked)} settlements = Σ cut − Σ paid: ${s.pool_after_mismatch && s.pool_after_mismatch.length ? `differs in ${s.pool_after_mismatch.join(', ')}` : 'equal'}`,
+    s.pool_now_matches === null || s.pool_now_matches === undefined ? 'pool now: the node had moved on when it was read' : `pool now ${grp(s.pool_now_calc)} = the node's ${grp(s.pool_now_node)}: ${s.pool_now_matches ? 'equal' : 'differs'}`];
+  return `${earnStrip(E)}
+  <p class="lede">every block mints ${grp(E.subsidy)} (1 % of genesis supply a year). the miner's coinbase takes it minus the pool's cut, plus the block's fees: that pays for header work, the proof of work that orders the chain. the cut, floor(SUBSIDY × focus_bps ÷ 10,000), goes to the focus pool; focus_bps = min(${grp(E.focus_max_bps)}, √θ in basis points) with θ = active stake ÷ supply at the boundary, so the pool grows with the capital that takes risk on the graph and never takes more than half (<a href="${SPEC}#61-the-split" target="_blank" rel="noopener">chain-economy §6.1–6.2</a>). each settlement releases a quarter of the pool as the epoch's budget and pays it to positions whose stake raised syntropy (§5.5).</p>
+  <div class="charts">${EA.charts.map((c) => `<figure class="chart"><figcaption><span class="ct">${c.title}</span><span class="lg">${c.series.map((x) => `<i style="background:${x.col}"></i>${x.name}`).join('')}</span></figcaption><canvas id="${c.id}" height="200"></canvas><div class="tipbox" id="${c.id}-tip" hidden></div></figure>`).join('')}</div>
+  <h2>the ledger per epoch</h2><div id="ea-led">${table(LED_HEAD, rows, 'no block yet')}${moreBtn('led', EA.shown.led, led.length)}</div>
+  <p class="note">sanity · ${checks.join(' · ')}. the split of a passed boundary whose epoch has not settled is computed the same way and checked once it settles. raw data: <a href="${DATA}/earnings.json">earnings.json</a>.</p>`;
+}
+
+function earnSummary(E, P) {
+  const w = E.miners.all;
+  const S = P ? P.stakers : [];
+  const SH = ['#', 'neuron', '>earned', '>a year~'];
+  const sRows = S.slice(0, 8).map((r, i) => tds([grp(i + 1), ref('neuron', r.n), amtc(r.earned), r.apr === null ? '—' : fpct(r.apr)], SH));
+  const MH = ['#', 'miner', '>blocks', '>share', '>earned'];
+  const mRows = w.rows.slice(0, 8).map((r, i) => tds([grp(i + 1), ref('neuron', r.m), grp(r.blocks), fpct(r.share), amtc(r.earned)], MH));
+  const tvOf = new Map();   // the summary leaves focus moved to the paid-knowledge page
+  return `<p class="lede">two kinds of work are paid, and only these two: header work, the proof of work that orders blocks, paid to the miner of every block; and knowledge, stake on a cyberlink that makes the network's attention more ordered, paid to positions at each settlement by how much their stake raised syntropy. everything below is read from the chain: coinbase amounts, the epoch records and the staking txs.</p>
+  ${earnStrip(E)}
+  <div class="cols"><div><h2>top miners · all blocks</h2>${table(MH, mRows, 'no miner yet')}<div class="pager"><a href="#/earnings/miners">last hour, day, all →</a></div></div>
+  <div><h2>top stakers</h2>${P ? table(SH, sRows, 'no staker yet') : '<div class="empty">needs data/payouts.json</div>'}<div class="pager"><a href="#/earnings/stakers">stakers and positions →</a><a class="end" href="#/earnings/yield">yield →</a></div></div></div>
+  <h2>latest paid knowledge</h2>${P && P.receipts.length ? P.receipts.slice(0, 3).map((r) => receipt(r, P, tvOf)).join('') : '<div class="empty">no payout yet.</div>'}
+  <div class="pager"><a href="#/earnings/paid">every receipt, the price of knowledge →</a><a class="end" href="#/focus/moved">who moved focus →</a></div>`;
+}
+
+// a small chart over epochs: bars and lines, hover for the epoch's numbers
+function drawEarnCharts() { for (const c of EA.charts || []) drawEpochChart(c); }
+function drawEpochChart(c, hover = -1) {
+  const cv = $(`#${c.id}`); if (!cv) return;
+  const dpr = window.devicePixelRatio || 1; const W = cv.clientWidth || 600; const H = 200;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const n = c.x.length; if (!n) return;
+  const vals = []; for (const s of c.series) for (const v of s.v) if (v !== null && isFinite(v)) vals.push(v);
+  let ymax = Math.max(0, ...vals); if (!(ymax > 0)) ymax = 1;
+  const L = 58; const R = 10; const T = 10; const B = 22; const pw = W - L - R; const ph = H - T - B;
+  const ticks = niceTicks(0, ymax * 1.06, 4); const top = Math.max(ticks[ticks.length - 1], ymax * 1.06);
+  const X = (i) => L + ((i + 0.5) * pw) / n; const Y = (v) => T + ph - (v / top) * ph;
+  const fmt = c.fmt || ((v) => si(v));
+  g.font = '10.5px "JetBrains Mono", Menlo, monospace'; g.fillStyle = COL.axis; g.strokeStyle = COL.grid; g.lineWidth = 1; g.textAlign = 'right'; g.textBaseline = 'middle';
+  for (const v of ticks) { const y = Y(v); g.beginPath(); g.moveTo(L, y + 0.5); g.lineTo(L + pw, y + 0.5); g.stroke(); g.fillText(fmt(v).replace(/ /g, ''), L - 6, y); }
+  g.textAlign = 'center'; g.textBaseline = 'top';
+  const every = Math.max(1, Math.ceil(n / 8));
+  for (let i = 0; i < n; i += every) g.fillText(String(c.x[i]), X(i), T + ph + 6);
+  const bars = c.series.filter((s) => s.bar); const slot = pw / n; const bw = Math.max(1, (slot * 0.8) / Math.max(1, bars.length));
+  if (hover >= 0) { g.fillStyle = 'rgba(255,255,255,.06)'; g.fillRect(L + hover * slot, T, slot, ph); }
+  bars.forEach((s, k) => {
+    g.fillStyle = s.col;
+    s.v.forEach((v, i) => { if (!v) return; const x = L + i * slot + slot * 0.1 + k * bw; const y = Y(v); g.fillRect(x, y, bw - (bw > 3 ? 1 : 0), T + ph - y); });
+  });
+  for (const s of c.series.filter((x) => !x.bar)) {
+    g.strokeStyle = s.col; g.lineWidth = 2; g.setLineDash(s.dash ? [6, 4] : []); g.beginPath(); let on = false;
+    s.v.forEach((v, i) => {
+      if (v === null || !isFinite(v)) { on = false; return; }
+      const y = Y(v);
+      if (s.step) { const x0 = L + i * slot; if (!on) { g.moveTo(x0, y); on = true; } else g.lineTo(x0, y); g.lineTo(x0 + slot, y); } else { if (!on) { g.moveTo(X(i), y); on = true; } else g.lineTo(X(i), y); }
+    });
+    g.stroke(); g.setLineDash([]);
+  }
+  cv.onmousemove = cv.ontouchstart = (ev) => {
+    const p = ev.touches ? ev.touches[0] : ev; const rect = cv.getBoundingClientRect(); const i = Math.max(0, Math.min(n - 1, Math.floor((p.clientX - rect.left - L) / slot)));
+    drawEpochChart(c, i); const tb = $(`#${c.id}-tip`); tb.hidden = false; tb.innerHTML = c.tip(i);
+    tb.style.left = `${Math.min(Math.max(0, X(i) + 12), W - tb.offsetWidth - 4)}px`;
+  };
+  cv.onmouseleave = () => { $(`#${c.id}-tip`).hidden = true; drawEpochChart(c); };
+}
+
+/* previews of particles: the legacy CID from the explorer's map, the first bytes from the gateway; three at a time, each once */
+const PV = { html: new Map(), q: [], busy: 0, wait: new Set() };
+function hydratePv() {
+  document.querySelectorAll('[data-pv]:not([data-pvd])').forEach((el) => {
+    el.dataset.pvd = '1'; const id = el.dataset.pv;
+    if (PV.html.has(id)) { el.innerHTML = PV.html.get(id); return; }
+    el.innerHTML = '<span class="mute">…</span>';
+    if (!PV.wait.has(id)) { PV.wait.add(id); PV.q.push(id); }
+  });
+  pumpPv();
+}
+function pumpPv() {
+  while (PV.busy < 3 && PV.q.length) {
+    const id = PV.q.shift(); PV.busy++;
+    pvOne(id).catch(() => '<span class="mute">—</span>').then((h) => {
+      PV.html.set(id, h); PV.wait.delete(id);
+      document.querySelectorAll(`[data-pv="${id}"]`).forEach((el) => { el.innerHTML = h; });
+    }).finally(() => { PV.busy--; pumpPv(); });
+  }
+}
+async function pvOne(id) {
+  const c = await cidOf(id);
+  if (!c.map) return '<span class="mute">content map not served</span>';
+  if (!c.cid) return '<span class="mute">no legacy CID known</span>';
+  const url = GATEWAY + encodeURIComponent(c.cid);
+  const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 15000);
+  try {
+    const r = await fetch(url, { headers: { Range: 'bytes=0-1023' }, signal: ctl.signal });
+    if (!r.ok) throw new Error(String(r.status));
+    const ct = (r.headers.get('content-type') || '').toLowerCase();
+    if (ct.startsWith('image/')) { ctl.abort(); return `<a class="pv-i" href="${esc(url)}" target="_blank" rel="noopener"><img class="pv-thumb" alt="" loading="lazy" src="${esc(url)}"></a>`; }
+    const buf = new Uint8Array(await r.arrayBuffer()).slice(0, 1024);
+    let text = null; try { text = new TextDecoder('utf-8', { fatal: false }).decode(buf); } catch { text = null; }
+    if (text !== null && !/[\x00-\x08\x0e-\x1f]/.test(text.slice(0, 200))) {
+      const line = text.replace(/\s+/g, ' ').trim();
+      return `<span class="pv-t" title="${esc(line.slice(0, 400))}">${esc(line.slice(0, 120))}${line.length > 120 ? '…' : ''}</span>${gw(c.cid)}`;
+    }
+    return `<span class="mute">${esc(ct || 'binary')}</span>${gw(c.cid)}`;
+  } catch (e) {
+    return `<span class="mute">${e.name === 'AbortError' ? 'the gateway is slow' : 'bytes not on the gateway'}</span>${gw(c.cid)}`;
+  } finally { clearTimeout(timer); }
+}
+
+function earnClick(e) {
+  const mw = e.target.closest('[data-mw]');
+  if (mw) { EA.mw = mw.dataset.mw; render(true); return true; }
+  const me = e.target.closest('[data-me]');
+  if (me) { EA.me = Number(me.dataset.me); render(true); return true; }
+  const mo = e.target.closest('[data-emore]');
+  if (mo) { EA.shown[mo.dataset.emore] += 100; render(true); return true; }
+  return false;
+}
+
+/* who moved focus: per recorded epoch, the particles whose φ* moved most, what the epoch's txs did around them, who got paid */
+async function focusMoved(st) {
+  const m = await file('moved.json');
+  viewLive = () => (LIVE.st['last-settled'] !== st['last-settled'] ? render(true) : null);
+  const kick = `<p class="kick">focus · who moved it · ${esc(st.chain)}</p><h1>who moved <em>focus</em></h1>`;
+  const lede = `<p class="lede">collective learning in action: φ* of an epoch is the solve over the graph at its boundary, so what moved attention between two boundaries is the stake that neurons locked and unlocked in between (a cyberlink without stake carries no weight unless genesis frames carry its axon, <a href="${SPEC}#42-axon-weight-and-valence" target="_blank" rel="noopener">chain-economy §4.2</a>). the settlement of that epoch then pays the positions whose added stake raised syntropy. one view: attention moved → who moved it → who got paid.</p>`;
+  if (!m || !(m.epochs || []).length) return `${kick}${focusSeg('moved')}${lede}<div class="empty">the explorer records φ* of every settled epoch since epoch 14; a change needs two consecutive records. the first comes with the next settlement.</div>`;
+  const eps = m.epochs; const x = eps.find((y) => y.epoch === EA.me) || eps[0];
+  const P = m.particles; const pid = (i) => (i === null || i === undefined ? null : P[i][0]);
+  const touch = new Map();
+  for (const t of x.txs) for (const i of [t[4], t[5]]) touch.set(i, (touch.get(i) || 0) + 1);
+  const MV_HEAD = ['#', 'particle', '>φ* before', '>φ* after', '>Δ', '>txs~'];
+  const mvRows = (rows) => rows.map((r, i) => tds([grp(i + 1), `${ref('particle', pid(r[0]))}${pv(pid(r[0]))}`, shr(r[1]), shr(r[2]), dshare(r[2] ?? '0', r[1] ?? '0'), grp(touch.get(r[0]) || 0)], MV_HEAD));
+  const TX_HEAD = ['height', 'tx', 'kind', 'neuron', 'p → q', '>amount', 'valence~'];
+  const txRows = x.txs.slice(0, EA.shown.txs).map((t) => tds([hlink(t[0]), ref('tx', t[1]), `${kind(t[2])}${t[8] ? ' <span class="me" title="touches a particle listed above">●</span>' : ''}`, ref('neuron', t[3]),
+    `${ref('particle', pid(t[4]))} → ${ref('particle', pid(t[5]))}`, big(t[6]) ? amtc(t[6]) : '<span class="mute">0</span>', t[7] === null ? '—' : val(t[7])], TX_HEAD));
+  const PD_HEAD = ['position', 'neuron', 'p → q', '>paid'];
+  const pdRows = x.paid.map((r) => tds([ref('card', r[0]), r[1] ? ref('neuron', r[1]) : '—', `${ref('particle', pid(r[3]))} → ${ref('particle', pid(r[4]))}${pv(pid(r[4]))}`, amtc(r[5])], PD_HEAD));
+  const tv = big(x.tv);
+  const story = `between the boundaries ${hlink(x.from - 1)} and ${hlink(x.to)}, ${pl(x.stake_txs, 'staking tx')} locked ${amtc(x.locked)} and unlocked ${amtc(x.unlocked)}, and ${pl(x.cyberlinks, 'cyberlink')} ${x.cyberlinks === 1 ? 'was' : 'were'} signed. the solve at ${grp(x.to)} moved ${pct(tv, SCALE)} of all focus across ${pl(x.moved, 'particle')}${x.whole ? '' : ` (compared over the ${grp(x.compared)} particles both records hold)`}. ${x.settled_at ? `the settlement at ${hlink(x.settled_at)} paid ${amtc(x.paid_total || '0')} of a ${amtc(x.budget || '0')} budget to ${pl(x.paid.length, 'position')}.` : ''}`;
+  setTimeout(hydratePv, 0);
+  return `${kick}<p class="sub">epoch ${grp(x.epoch)} against ${grp(x.prev)} · ${pl(eps.length, 'epoch')} recorded with the epoch before</p>${focusSeg('moved')}${lede}
+  <div class="seg" role="group" aria-label="epoch">${eps.slice(0, 24).map((y) => `<button data-me="${y.epoch}" class="${y === x ? 'on' : ''}">${grp(y.epoch)}</button>`).join('')}<span class="mute">epoch</span></div>
+  <div class="tiles">${tile('focus moved', pct(tv, SCALE), '½ Σ |Δφ*|: the share of all attention that changed place', 'hero')}${tile('Δ syntropy', nats(x.delta_syntropy), 'J(φ*ₑ) − J(φ*ₑ₋₁), the epoch record')}
+    ${tile('stake txs', grp(x.stake_txs), `locked ${grp(x.locked)} · unlocked ${grp(x.unlocked)} · ${pl(x.cyberlinks, 'cyberlink')}`, 'stake')}${tile('paid', amtc(x.paid_total || '0'), `at settlement to ${pl(x.paid.length, 'position')}`)}</div>
+  <p class="note">${story}</p>
+  <div class="cols c2"><div><h2>rose</h2>${table(MV_HEAD, mvRows(x.up), 'no particle gained focus')}</div><div><h2>fell</h2>${table(MV_HEAD, mvRows(x.down), 'no particle lost focus')}</div></div>
+  <h2>what the epoch did</h2><div id="mv-txs">${table(TX_HEAD, txRows, 'no staking tx and no cyberlink in this epoch: attention moved by nothing on chain, or did not move')}${moreBtn('txs', EA.shown.txs, x.txs.length)}</div>
+  ${x.txs_total > x.txs.length ? `<p class="note">the file keeps ${grp(x.txs.length)} of the epoch's ${grp(x.txs_total)} txs, those touching the listed particles first.</p>` : ''}
+  <h2>who got paid for it</h2>${table(PD_HEAD, pdRows, x.settled_at ? 'the settlement paid nobody: no position added stake on a side whose gradient was positive' : 'not settled yet')}
+  <p class="note">Δ in percentage points (pp) of all focus · ● marks a tx on an axon into or out of a listed particle · raw data: <a href="${DATA}/moved.json">moved.json</a>.</p>`;
+}
+
+/* the graph: the top particles by φ* and every staked axon, laid out by force, drawn on a canvas */
+const GR = { data: null, raf: 0, nodes: null, edges: null, hover: null, resize: null, it: 0 };
+async function focusGraph(st) {
+  const g = await file('graph.json', 300000);
+  viewLive = () => (LIVE.st['last-settled'] !== st['last-settled'] ? render(true) : null);
+  const kick = `<p class="kick">focus · the graph · ${esc(st.chain)}</p><h1>the <em>graph</em></h1>`;
+  if (!g) return `${kick}${focusSeg('graph')}<div class="empty">the graph comes from the explorer's index (data/graph.json), written once per settled epoch, which is not served here yet.</div>`;
+  GR.data = g;
+  const held = g.nodes.reduce((s, n) => s + n[1], 0);
+  const staked = g.edges.filter((e) => big(e[3]) || big(e[4])).length;
+  setTimeout(startGraph, 0);
+  return `${kick}<p class="sub">epoch ${grp(g.epoch)} · ${grp(g.nodes.length)} of ${grp(g.particles)} particles · ${grp(g.edges.length)} axons · computed ${ago(g.generated)}</p>${focusSeg('graph')}
+  <figure class="chart graph"><figcaption><span class="ct">the most attended particles and the axons among them</span><span class="lg"><i class="dot" style="background:${COL.pink}"></i>net stake for<i class="dot" style="background:${COL.blue}"></i>net stake against<i class="dot" style="background:#9a9a9a"></i>no stake</span></figcaption>
+  <canvas id="gr"></canvas><div class="tipbox" id="gr-tip" hidden></div></figure>
+  <div class="tiles">${tile('drawn', grp(g.nodes.length), `particles: the top ${grp(Math.min(400, g.nodes.length))} by φ* and the endpoints of staked axons`, 'hero')}${tile('they hold', fpct(held), 'of all focus')}
+    ${tile('axons', grp(g.edges.length), 'among them, by focus flow, at most 2,400')}${tile('staked', grp(staked), 'axons with stake now, drawn glowing', 'stake')}</div>
+  <p class="note">size = share of focus φ* · a dot's colour is the net stake on its in-axons now (for − against) · a glowing line is an axon with stake now, its width the stake, its colour the side that holds more · faint lines carry focus by genesis weight. the layout is a force simulation run in your browser (repulsion between particles, springs along axons), so it settles anew on each visit. click a particle to open it. raw data: <a href="${DATA}/graph.json">graph.json</a>.</p>`;
+}
+function startGraph() {
+  const d = GR.data; const cv = $('#gr'); if (!cv || !d) return;
+  cancelAnimationFrame(GR.raf);
+  const N = d.nodes.length; const maxS = Math.max(1e-12, ...d.nodes.map((n) => n[1]));
+  GR.nodes = d.nodes.map((n, i) => {
+    const r = Math.sqrt((i + 0.5) / N); const a = i * 2.399963;
+    const net = big(n[3]) - big(n[4]);
+    return { id: n[0], share: n[1], cid: n[2], for: n[3], against: n[4], net, rank: i + 1, x: r * Math.cos(a), y: r * Math.sin(a), dx: 0, dy: 0, r: 1.6 + 8.5 * Math.sqrt(n[1] / maxS) };
+  });
+  const maxStake = Math.max(1, ...d.edges.map((e) => Number(big(e[3]) + big(e[4]))));
+  GR.edges = d.edges.map((e) => { const s = Number(big(e[3]) + big(e[4])); return { a: e[0], b: e[1], flow: e[2], s, w: s ? 1.4 + 3.6 * Math.sqrt(s / maxStake) : 0, net: big(e[3]) - big(e[4]) }; });
+  GR.it = 0;
+  const ITER = 240; const k = Math.sqrt(1 / N) * 0.9;
+  const step = () => {
+    const ns = GR.nodes; const t = 0.08 * (1 - GR.it / ITER) + 0.002;
+    for (const a of ns) { a.dx = 0; a.dy = 0; }
+    for (let i = 0; i < N; i++) {
+      const a = ns[i];
+      for (let j = i + 1; j < N; j++) {
+        const b = ns[j]; let dx = a.x - b.x; let dy = a.y - b.y; let d2 = dx * dx + dy * dy;
+        if (d2 < 1e-9) { dx = 1e-4 * (i - j); dy = 1e-4; d2 = 1e-8; }
+        const f = (k * k) / d2; a.dx += dx * f; a.dy += dy * f; b.dx -= dx * f; b.dy -= dy * f;
+      }
+    }
+    for (const e of GR.edges) {
+      const a = ns[e.a]; const b = ns[e.b]; const dx = a.x - b.x; const dy = a.y - b.y; const dd = Math.sqrt(dx * dx + dy * dy) || 1e-6;
+      const f = (dd / k) * (e.s ? 1.6 : 1); a.dx -= dx * f; a.dy -= dy * f; b.dx += dx * f; b.dy += dy * f;
+    }
+    for (const a of ns) {
+      a.dx -= a.x * 2.2; a.dy -= a.y * 2.2;                         // gravity: the islands stay on the canvas
+      const m = Math.sqrt(a.dx * a.dx + a.dy * a.dy) || 1; const s = Math.min(m, t) / m; a.x += a.dx * s; a.y += a.dy * s;
+    }
+    GR.it++;
+  };
+  const frame = () => {
+    if (!document.body.contains(cv)) return;
+    const per = N > 300 ? 3 : 6;
+    for (let i = 0; i < per && GR.it < ITER; i++) step();
+    drawGraph();
+    if (GR.it < ITER) GR.raf = requestAnimationFrame(frame);
+  };
+  GR.resize = () => { if (document.body.contains(cv)) drawGraph(); };
+  const pick = (ev) => {
+    const p = ev.touches ? ev.touches[0] : ev; const rect = cv.getBoundingClientRect(); const mx = p.clientX - rect.left; const my = p.clientY - rect.top;
+    let best = null; let bd = Infinity;
+    for (const n of GR.nodes) { const d2 = (n.sx - mx) ** 2 + (n.sy - my) ** 2; if (d2 < Math.max(14 * 14, n.r * n.r) && d2 < bd) { bd = d2; best = n; } }
+    return { best, mx, my };
+  };
+  cv.onmousemove = cv.ontouchstart = (ev) => {
+    const { best, mx, my } = pick(ev); const tb = $('#gr-tip');
+    if (!best) { tb.hidden = true; if (GR.hover) { GR.hover = null; drawGraph(); } return; }
+    if (GR.hover !== best) { GR.hover = best; drawGraph(); }
+    tb.hidden = false;
+    tb.innerHTML = `<b>${short(best.id)}</b> · rank ${grp(best.rank)} here<br>focus ${fpct(best.share)}<br>${big(best.for) || big(best.against) ? `stake on its in-axons: for ${amtc(best.for)} · against ${amtc(best.against)}` : 'no stake on its in-axons'}<br>${best.cid ? `content ${short(best.cid)}` : 'no legacy CID known'}`;
+    tb.style.left = `${Math.min(Math.max(0, mx + 14), cv.clientWidth - tb.offsetWidth - 4)}px`; tb.style.top = `${Math.max(36, Math.min(my - 10, cv.clientHeight - 40))}px`;
+  };
+  cv.onmouseleave = () => { $('#gr-tip').hidden = true; GR.hover = null; drawGraph(); };
+  cv.onclick = (ev) => { const { best } = pick(ev); if (best) location.hash = `#/particle/${best.id}`; };
+  frame();
+}
+function drawGraph() {
+  const cv = $('#gr'); if (!cv || !GR.nodes) return;
+  const dpr = window.devicePixelRatio || 1; const W = cv.clientWidth || 600; const H = Math.round(Math.min(Math.max(W * 0.72, 340), 760));
+  cv.style.height = `${H}px`; if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+  const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+  const ns = GR.nodes; let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity;
+  for (const n of ns) { if (n.x < x0) x0 = n.x; if (n.x > x1) x1 = n.x; if (n.y < y0) y0 = n.y; if (n.y > y1) y1 = n.y; }
+  const pad = 18; const sc = Math.min((W - 2 * pad) / (x1 - x0 || 1), (H - 2 * pad) / (y1 - y0 || 1));
+  const ox = (W - (x1 - x0) * sc) / 2; const oy = (H - (y1 - y0) * sc) / 2;
+  for (const n of ns) { n.sx = ox + (n.x - x0) * sc; n.sy = oy + (n.y - y0) * sc; }
+  // the faint axons first, in one path
+  g.lineWidth = 0.6; g.strokeStyle = 'rgba(255,255,255,.10)'; g.beginPath();
+  for (const e of GR.edges) { if (e.s) continue; const a = ns[e.a]; const b = ns[e.b]; g.moveTo(a.sx, a.sy); g.lineTo(b.sx, b.sy); }
+  g.stroke();
+  const hv = GR.hover;
+  if (hv) {   // the axons of the hovered particle
+    g.lineWidth = 1.2; g.strokeStyle = 'rgba(255,255,255,.55)'; g.beginPath();
+    const i = ns.indexOf(hv);
+    for (const e of GR.edges) { if (e.a !== i && e.b !== i) continue; const a = ns[e.a]; const b = ns[e.b]; g.moveTo(a.sx, a.sy); g.lineTo(b.sx, b.sy); }
+    g.stroke();
+  }
+  // the staked axons glow
+  g.save(); g.shadowBlur = 14;
+  for (const e of GR.edges) {
+    if (!e.s) continue; const a = ns[e.a]; const b = ns[e.b]; const col = e.net < 0n ? COL.blue : COL.pink;
+    g.shadowColor = col; g.strokeStyle = col; g.lineWidth = e.w; g.globalAlpha = 0.9; g.beginPath(); g.moveTo(a.sx, a.sy); g.lineTo(b.sx, b.sy); g.stroke();
+  }
+  g.restore();
+  for (const n of ns) {
+    const col = n.net > 0n ? COL.pink : n.net < 0n ? COL.blue : n.r > 5 ? '#e6e6e6' : '#9a9a9a';
+    g.globalAlpha = n.net !== 0n ? 1 : n.r > 5 ? 0.9 : 0.7; g.fillStyle = col; g.beginPath(); g.arc(n.sx, n.sy, n.r, 0, 6.2832); g.fill();
+  }
+  g.globalAlpha = 1;
+  if (hv) { g.beginPath(); g.arc(hv.sx, hv.sy, hv.r + 4, 0, 6.2832); g.lineWidth = 2; g.strokeStyle = COL.ink; g.stroke(); }
+}
+
 /* ------------------------------------------------------------------ search, routing */
 function notFound(what, why) {
   return `<p class="kick">not found</p><h1>${what}</h1><div class="empty">${esc(why || 'this node does not know it')}.</div><p class="note"><a href="#/">back to the overview</a></p>`;
@@ -1134,7 +1591,9 @@ const ROUTES = [
   [/^staking$/, staking, 'staking'],
   [/^history$/, history, 'history'],
   [/^focus$/, () => focus(''), 'focus'],
-  [/^focus\/(axons|neurons)$/, focus, 'focus'],
+  [/^focus\/(axons|neurons|moved|graph)$/, focus, 'focus'],
+  [/^earnings$/, () => earn(''), 'earnings'],
+  [/^earnings\/(miners|stakers|yield|paid|emission)$/, earn, 'earnings'],
   [/^network$/, network, 'network'],
   [/^search\/(.+)$/, search, ''],
 ];
@@ -1146,7 +1605,7 @@ async function render(soft) {
   const hit = ROUTES.find(([re]) => re.test(low));
   const view = $('#view');
   document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', !!hit && a.dataset.tab === hit[2]));
-  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, blocks, block, tx, neuron, particle, card, epochs, epoch, staking, history, focus (particles, axons, neurons) and network'); return; }
+  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, earnings (miners, stakers, yield, paid knowledge, emission), blocks, block, tx, neuron, particle, card, epochs, epoch, staking, history, focus (particles, axons, neurons, who moved focus, graph) and network'); return; }
   if (!soft) { viewLive = null; view.innerHTML = `<p class="muted pad">reading the node…</p>`; }
   try {
     const html = await hit[1](...(low.match(hit[0]).slice(1)));
@@ -1166,7 +1625,7 @@ async function render(soft) {
 
 window.addEventListener('hashchange', () => { render(false); window.scrollTo(0, 0); });
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { nextPoll = 0; tick(); } });
-window.addEventListener('resize', () => { clearTimeout(CH.rz); CH.rz = setTimeout(() => { drawAll(); drawFocusStake(); }, 120); });
+window.addEventListener('resize', () => { clearTimeout(CH.rz); CH.rz = setTimeout(() => { drawAll(); drawFocusStake(); drawEarnCharts(); GR.resize && GR.resize(); }, 120); });
 setInterval(tick, TICK);
 
 $('#search').addEventListener('submit', (e) => {
@@ -1181,6 +1640,7 @@ document.addEventListener('click', async (e) => {
   if (r) { CH.range = r.dataset.range; document.querySelectorAll('#ranges button').forEach((b) => b.classList.toggle('on', b === r)); drawAll(); return; }
   const so = e.target.closest('[data-sort]');
   if (so && FX.neurons) { const k = so.dataset.sort; FX.nDir = FX.nSort === k ? -FX.nDir : -1; FX.nSort = k; $('#fx-neurons').innerHTML = neuronTable(); balances(); return; }
+  if (earnClick(e)) return;
   const mo = e.target.closest('[data-more]');
   if (mo) {
     if (mo.dataset.more === 'axons') { FX.aShown += 100; $('#fx-axons').innerHTML = axonTable(); } else { FX.nShown += 100; $('#fx-neurons').innerHTML = neuronTable(); balances(); }
