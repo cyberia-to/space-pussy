@@ -10,6 +10,9 @@ const QS = new URLSearchParams(location.search);
 const API = (QS.get('api') || '/explorer/api').replace(/\/+$/, '');
 const DATA = (QS.get('data') || '/explorer/data').replace(/\/+$/, '');
 const CIDS = (QS.get('cids') || '/explorer/cids').replace(/\/+$/, '');
+// a signal (cybergraph/specs/signal.md) is what a neuron commits in one step; the node's read API still names it `tx`
+// (/explorer/api/tx/<id>). when the node renames it (plan row P12) this is the one line to change.
+const SIGNAL_API = '/tx';
 const GATEWAY = 'https://gateway.ipfs.cybernode.ai/ipfs/';
 const TARGET = 30;          // s per block, the ASERT target
 const WINDOW = 100;         // blocks for the median block time and the hashrate estimate
@@ -41,7 +44,7 @@ const parseMark = (t) => {
   return out;
 };
 
-const memo = new Map();     // immutable answers: by block id, by tx id once in a block
+const memo = new Map();     // immutable answers: by block id, by signal id once in a block
 async function req(path) {
   if (memo.has(path)) return memo.get(path);
   const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 10000);
@@ -57,7 +60,7 @@ async function req(path) {
   let data = null;
   try { data = ct.includes('json') || /^\s*[{[]/.test(text) ? parseJSON(text) : text.startsWith('---') ? parseMark(text) : text; } catch { data = text; }
   const res = { ok: r.ok, status: r.status, data };
-  if (r.ok && (/^\/(block|header)\/[0-9a-f]{64}$/.test(path) || (/^\/tx\//.test(path) && data && data.height !== 'mempool'))) memo.set(path, res);
+  if (r.ok && (/^\/(block|header)\/[0-9a-f]{64}$/.test(path) || (path.startsWith(`${SIGNAL_API}/`) && data && data.height !== 'mempool'))) memo.set(path, res);
   up();
   return res;
 }
@@ -260,7 +263,7 @@ const meter = (frac, mark) => `<div class="meter"><i style="width:${(Math.max(0,
 const epochOf = (h, L) => Math.floor((Math.max(1, h) - 1) / L) + 1;
 
 /* ------------------------------------------------------------------ overview */
-const BLOCK_HEAD = ['height', 'block', 'age', '>txs', '>size~', 'miner~'];
+const BLOCK_HEAD = ['height', 'block', 'age', '>signals', '>size~', 'miner~'];
 const blockRow = (b, cls) => tds([`<a href="#/block/${b.height}">${grp(b.height)}</a>`, ref('block', b.id), ago(b.time), grp(b.txs), `${grp(b.size)}${SEP}B`, ref('neuron', b.miner)], BLOCK_HEAD, cls);
 const EPOCH_HEAD = ['epoch', '>boundary', '>settled at', '>budget', '>paid', '>rewarded~', '>Δ syntropy~'];
 const epochRow = (e) => tds([`<a href="#/epoch/${e.epoch}">${grp(e.epoch)}</a>`, hlink(e.boundary), hlink(e.settled_at), grp(e.budget), grp(e.paid), grp(e.rewarded), grp(e.delta_syntropy)], EPOCH_HEAD);
@@ -303,7 +306,7 @@ async function liveTiles() {
   const e = epochOf(tipH, L); const start = (e - 1) * L; const end = e * L;
   const settlePrev = start + D;
   $('#lv-mem').textContent = grp(st.mempool);
-  $('#lv-mem-note').textContent = `transactions waiting · ${st.peers} peer${st.peers === '1' ? '' : 's'} · finalized ${Number(st.finalized).toLocaleString('en')}`;
+  $('#lv-mem-note').textContent = `signals waiting · ${st.peers} peer${st.peers === '1' ? '' : 's'} · finalized ${Number(st.finalized).toLocaleString('en')}`;
   $('#lv-epoch').textContent = e;
   $('#lv-epoch-left').textContent = `${end - tipH} blocks to ${end}`;
   const em = $('#lv-emeter'); em.querySelector('i').style.width = `${(((tipH - start) / L) * 100).toFixed(2)}%`; em.querySelector('em').style.left = `${((D / L) * 100).toFixed(2)}%`;
@@ -376,7 +379,7 @@ function overviewTiles(stk) {
   ].join('');
 }
 
-/* ------------------------------------------------------------------ blocks, block, tx */
+/* ------------------------------------------------------------------ blocks, block, signal */
 async function blocks(top) {
   const st = await status();
   const tip = Number(st.height);
@@ -419,18 +422,18 @@ async function block(idh) {
     return notFound(`block ${esc(idh)}`, r.data && r.data.error ? r.data.error : 'not yet: the page shows it the moment it is mined');
   }
   const b = r.data;
-  const txs = await Promise.all((b.txids || []).slice(0, 200).map((id) => api(`/tx/${id}`).catch(() => null)));
-  const head = ['#', 'tx', 'kind', 'what', '>fee~'];
-  const rows = (b.txids || []).slice(0, 200).map((id, i) => { const t = txs[i]; return tds([i, ref('tx', id), t ? kind(t.kind) : '—', t ? txLine(t) : '', t && t.tx.fee !== undefined ? grp(t.tx.fee) : '—'], head); });
+  const txs = await Promise.all((b.txids || []).slice(0, 200).map((id) => api(`${SIGNAL_API}/${id}`).catch(() => null)));
+  const head = ['#', 'signal', 'kind', 'what', '>fee~'];
+  const rows = (b.txids || []).slice(0, 200).map((id, i) => { const t = txs[i]; return tds([i, ref('signal', id), t ? kind(t.kind) : '—', t ? txLine(t) : '', t && t.tx.fee !== undefined ? grp(t.tx.fee) : '—'], head); });
   return `<p class="kick">block</p><h1>block <em>${grp(b.height)}</em></h1><p class="sub">${full(b.id)}</p>
   <div class="crumbs">${b.height > 0 ? `<a href="#/block/${b.height - 1}">← ${grp(b.height - 1)}</a>` : ''}<a href="#/block/${b.height + 1}">${grp(b.height + 1)} →</a><a href="#/blocks/${b.height}">in the list</a></div>
   <h2>header</h2>${kv([
     ['height', grp(b.height)], ['time', `${grp(b.time)} unix · ${ago(b.time)}`], ['miner', b.miner ? ref('neuron', b.miner) : 'none (genesis)'],
-    ['transactions', grp(b.txs)], ['fees', amt(b.fees)], ['size', `${grp(b.size)}${SEP}bytes`],
+    ['signals', grp(b.txs)], ['fees', amt(b.fees)], ['size', `${grp(b.size)}${SEP}bytes`],
     ['bits', `${esc(b.bits)} · ${si(Number(work(b.bits)))} expected hashes`], ['nonce', full(b.nonce)],
-    ['prev', b.height > 0 ? ref('block', b.prev) : 'none'], ['tx root', full(b.tx_root)], ['state root', full(b.state_root)], ['chain', full(b.chain)], ['version', grp(b.version)],
+    ['prev', b.height > 0 ? ref('block', b.prev) : 'none'], ['signal root', full(b.tx_root)], ['state root', full(b.state_root)], ['chain', full(b.chain)], ['version', grp(b.version)],
   ])}
-  <h2>transactions</h2>${table(head, rows, 'no transactions in this block')}`;
+  <h2>signals</h2>${table(head, rows, 'no signals in this block')}`;
 }
 
 // a page that shows earnings renders again when a settlement lands
@@ -460,10 +463,10 @@ async function verdict(h, cardId) {
     : `the settlement of <a href="#/epoch/${E}">epoch ${E}</a> at ${hlink(S)} paid it nothing: budget ${grp(e.budget)}, paid ${grp(e.paid)} to ${grp(e.rewarded)} positions, Δ syntropy ${grp(e.delta_syntropy)}.`;
 }
 
-async function tx(id) {
+async function signalPage(id) {
   await status();
-  const r = await req(`/tx/${id}`);
-  if (!r.ok) return notFound(`transaction ${short(id)}`, 'not in a block on this node, nor in its mempool');
+  const r = await req(`${SIGNAL_API}/${id}`);
+  if (!r.ok) return notFound(`signal ${short(id)}`, 'not in a block on this node, nor in its mempool');
   const t = r.data; const x = t.tx || {};
   if (t.height === 'mempool') viewLive = () => render(true); else if (t.kind === 'cyberlink') onSettle();
   const where = t.height === 'mempool' ? 'in the mempool, not yet in a block' : `block ${ref('block', t.block)} at height <a href="#/block/${t.height}">${grp(t.height)}</a>, index ${grp(t.index)}`;
@@ -502,7 +505,7 @@ async function tx(id) {
   if (x.height !== undefined) rows.push(['coinbase height', grp(x.height)]);
   if (x.extra) rows.push(['extra', full(x.extra)]);
   if (x.sig) rows.push(['signature', `${short(x.sig)}${cp(x.sig)} · ${grp(x.sig.length / 2)}${SEP}bytes`]);
-  return `<p class="kick">transaction · ${esc(t.kind)}</p><h1>tx <em>${short(id)}</em></h1><p class="sub">${full(id)}</p>${link3}${extra}
+  return `<p class="kick">signal · ${esc(t.kind)}</p><h1>signal <em>${short(id)}</em></h1><p class="sub">${full(id)}</p>${link3}${extra}
   ${earnRows.length ? `<h2>earnings</h2>${kv(earnRows)}` : ''}<h2>fields</h2>${kv(rows)}`;
 }
 const pAnchor = (p) => (p ? `<a href="#/particle/${esc(p)}">${esc(p)}</a>` : '—');
@@ -632,7 +635,7 @@ function stakeAround(id, positions, f, ser) {
   const rows = mine.map((p) => tds([p.q === id ? 'in' : 'out', ref('neuron', p.neuron), `${p.p === id ? '<span class="me">this</span>' : ref('particle', p.p)} → ${p.q === id ? '<span class="me">this</span>' : ref('particle', p.q)}`,
     val(p.valence), amtc(p.stake), amtc(p.earned), p.open ? (p.card ? ref('card', p.card) : 'open') : '<span class="mute">closed</span>'], head));
   return `${tiles}${mine.length ? `<h2>&nbsp;</h2>${table(head, rows)}` : '<p class="note">no staking position on an axon into or out of this particle yet. a stake on one of its in-axons pushes focus toward it; it earns when the push raises syntropy (chain-economy §5).</p>'}
-  <p class="note">positions from the explorer's index of staking txs (stake now, earned = Σ payouts of each card); Δ focus in percentage points (pp) of all focus.</p>`;
+  <p class="note">positions from the explorer's index of staking signals (stake now, earned = Σ payouts of each card); Δ focus in percentage points (pp) of all focus.</p>`;
 }
 
 /* ------------------------------------------------------------------ epochs, focus */
@@ -823,7 +826,7 @@ const sanityNote = (a) => {
   const nodeA = s.node_axons_epoch ?? s.node_axons_timing; const linked = s.node_axons_stats;
   lines.push(nodeA === s.axons_present
     ? `axons: the explorer counts ${grp(s.axons_present)} present axons at the boundary (A &gt; 0: ${grp(s.axons_genesis)} from genesis, ${grp(s.axons_staked)} staked); the node's epoch record says ${grp(nodeA)} — equal.`
-    : `axons: the explorer counts ${grp(s.axons_present)} present axons at the boundary, the node's epoch record says ${grp(nodeA)} — they differ: the explorer replays stake from the blocks it has indexed, so a staking tx it has not seen (or a reorg it has not followed) moves its count.`);
+    : `axons: the explorer counts ${grp(s.axons_present)} present axons at the boundary, the node's epoch record says ${grp(nodeA)} — they differ: the explorer replays stake from the blocks it has indexed, so a staking signal it has not seen (or a reorg it has not followed) moves its count.`);
   lines.push(linked === s.axons_linked
     ? `cyberlinked pairs: the explorer knows ${grp(s.axons_linked)} (genesis frames and ${grp(s.chain_cyberlinks)} cyberlink${s.chain_cyberlinks === 1 ? '' : 's'} signed on chain); the node's /stats says ${grp(linked)} — equal.`
     : `cyberlinked pairs: the explorer knows ${grp(s.axons_linked)}, the node's /stats says ${grp(linked)} — /stats counts every pair ever cyberlinked, also those whose weight is 0 and that are absent from φ*.`);
@@ -937,7 +940,7 @@ async function staking() {
   const pRows = positions.map((p) => {
     const left = p.unlock_at ? Number(p.unlock_at) - tip : null;
     const lock = !p.open ? '<span class="mute">closed</span>' : left > 0 ? `${grp(p.unlock_at)} <span class="mute">· ≈ ${dur(left * TARGET)}</span>` : `${grp(p.unlock_at)} <span class="mute">· free</span>`;
-    return tds([ref('neuron', p.neuron), `${ref('particle', p.p)} → ${ref('particle', p.q)}`, val(p.valence), grp(p.stake), lock, grp(p.earned), `<a href="#/tx/${p.opened_tx}">${grp(p.opened_at)}</a>`, p.card ? ref('card', p.card) : '—'], pHead);
+    return tds([ref('neuron', p.neuron), `${ref('particle', p.p)} → ${ref('particle', p.q)}`, val(p.valence), grp(p.stake), lock, grp(p.earned), `<a href="#/signal/${p.opened_tx}">${grp(p.opened_at)}</a>`, p.card ? ref('card', p.card) : '—'], pHead);
   });
   // the settlements ahead and what they judge
   const pending = positions.filter((p) => p.open && Number(p.valence) !== 0).map((p) => {
@@ -947,8 +950,8 @@ async function staking() {
   const eps = stk && stk.epochs && stk.epochs.length ? stk.epochs : ((ep && ep.epochs) || []).slice().reverse().map((x) => ({ ...x, payouts: (x.payouts || []).length }));
   const eHead = ['epoch', '>settled at', '>focus', '>budget', '>paid', '>rewarded', '>pool after~', '>Δ syntropy~'];
   const eRows = eps.slice(0, 60).map((x) => tds([`<a href="#/epoch/${x.epoch}">${grp(x.epoch)}</a>`, hlink(x.settled_at), `${grp(x.focus_bps)}${SEP}bps`, grp(x.budget), grp(x.paid), grp(x.rewarded), grp(x.pool_after), grp(x.delta_syntropy)], eHead));
-  const evHead = ['height', 'tx', 'kind', 'neuron', 'p → q', '>amount'];
-  const evRows = ((stk && stk.events) || []).slice(0, 30).map((v) => tds([hlink(v.h), ref('tx', v.txid), kind(v.kind === 'cyberlink' ? 'lock' : v.kind), ref('neuron', v.from), `${ref('particle', v.p)} → ${ref('particle', v.q)}`, v.kind === 'payout' ? `owner ${short(v.payout)}` : grp(v.amount)], evHead));
+  const evHead = ['height', 'signal', 'kind', 'neuron', 'p → q', '>amount'];
+  const evRows = ((stk && stk.events) || []).slice(0, 30).map((v) => tds([hlink(v.h), ref('signal', v.txid), kind(v.kind === 'cyberlink' ? 'lock' : v.kind), ref('neuron', v.from), `${ref('particle', v.p)} → ${ref('particle', v.q)}`, v.kind === 'payout' ? `owner ${short(v.payout)}` : grp(v.amount)], evHead));
 
   return `<p class="kick">staking · ${esc(st.chain)}</p><h1>staked <em>cyberlinks</em></h1>
   <p class="lede">how staking pays: a cyberlink with amount &gt; 0 and valence ≠ 0 locks stake on p → q for at least ${grp(minLock)} blocks; every block sends ${bps(st['focus-bps'])} of its subsidy to the focus pool; at each settlement (boundary + ${D} blocks) a quarter of the pool is divided among the positions that took their axon side to a new high in the epoch, by their share of the syntropy gain, at most 1 % of the stake each added (<a href="https://github.com/cyberia-to/cybernode/blob/main/specs/chain-economy.md#5-settlement" target="_blank" rel="noopener">chain-economy §5–6</a>).</p>
@@ -963,7 +966,7 @@ async function staking() {
   ${pending.length ? `<p class="note">${pending.join('<br>')}</p>` : ''}
   <h2>every position</h2>${stk ? table(pHead, pRows, 'no staked cyberlink on this chain yet') : '<div class="empty">the list of positions comes from the explorer\'s index (data/stakes.json), which is not served here yet. a neuron\'s page lists its own positions from the node.</div>'}
   <h2>rewards per epoch</h2>${table(eHead, eRows, 'no epoch settled yet')}
-  ${evRows.length ? `<h2>staking transactions</h2>${table(evHead, evRows)}` : ''}
+  ${evRows.length ? `<h2>staking signals</h2>${table(evHead, evRows)}` : ''}
   ${stk ? `<p class="note">index at height ${grp(stk.tip)}, written ${ago(stk.generated)}; current stake and lock come from the node's cards, earned is the sum of each card's payouts in the settled epochs.</p>` : ''}`;
 }
 
@@ -974,7 +977,7 @@ const CHARTS = [
   { key: 'hr', lo: 'hr_lo', hi: 'hr_hi', title: 'hashrate', unit: 'H/s', note: 'Σ work ÷ Δt per bin (at least 12 blocks); the band is the range of a 12-block rolling estimate inside the bin', fmt: (v) => si(v, 'H/s') },
   { key: 'd', lo: 'd_lo', hi: 'd_hi', title: 'difficulty', unit: 'hashes', note: 'expected hashes per block, 2^256 ÷ (target + 1); mean and range per bin', fmt: (v) => si(v) },
   { key: 'bt', lo: 'bt_lo', hi: 'bt_hi', title: 'block time', unit: 's', note: 'mean per bin (at least 12 blocks); the band is the fastest and slowest block; the dashed line is the 30 s target', fmt: (v) => `${v === null ? '—' : Number(v).toFixed(1)}${SEP}s`, target: TARGET, linear: true },
-  { key: 'tx', title: 'transactions', unit: 'per bin', note: 'transactions per bin, coinbase excluded', fmt: (v) => grp(v), bars: true, linear: true },
+  { key: 'tx', title: 'signals', unit: 'per bin', note: 'signals per bin, coinbase excluded', fmt: (v) => grp(v), bars: true, linear: true },
   { key: 'sa', key2: 'st', title: 'stake', unit: '', note: 'active (valence ≠ 0) and total stake at the end of each bin', fmt: (v) => si(v), linear: true, legend: ['active', 'total'] },
   { key: 'fb', title: 'to stakers', unit: 'bps', note: 'focus_bps in force: the share of each block\'s subsidy that goes to the focus pool, θ<sup>½</sup> in basis points, fixed at every boundary (chain-economy §6.1); the rest pays the miner. <a href="#/earnings/emission">emission →</a>', fmt: (v) => (v === null || v === undefined ? '—' : bps(v)), linear: true },
 ];
@@ -992,7 +995,7 @@ async function history() {
     tile('hashrate<span class="est">100 blocks</span>', si(s.hashrate_100, 'H/s'), `1,000 blocks: ${si(s.hashrate_1000, 'H/s')}`),
     tile('block time', `${Number(s.block_time_1000).toFixed(1)}<span class="u">s</span>`, `mean of the last 1,000 · last 100: ${Number(s.block_time_100).toFixed(1)}${SEP}s`),
     tile('chainwork', si(Number(s.chainwork)), `hashes behind the tip · difficulty now ${si(Number(s.difficulty))}`),
-    tile('transactions', grp(s.txs_total), `coinbase excluded · ${grp(s.staking_txs)} staking`),
+    tile('signals', grp(s.signals_total ?? s.txs_total), `coinbase excluded · ${grp(s.staking_signals ?? s.staking_txs)} staking`),
     tile('miners', grp((s.miners_1000 || []).length), `distinct in the last 1,000 blocks · top ${s.miners_1000 && s.miners_1000[0] ? `${ref('neuron', s.miners_1000[0].miner)} ${grp(s.miners_1000[0].blocks)}` : '—'}`),
   ].join('') : '';
   setTimeout(drawAll, 0);
@@ -1263,7 +1266,7 @@ async function earnPaid(E, P) {
     amtc(l[2]), grp(l[3]), grp(l[4]), `${big(l[6]) ? `<span class="pos">+</span>${amtc(l[6])}` : ''}${big(l[7]) ? ` <span class="neg">−</span>${amtc(l[7])}` : ''}${!big(l[6]) && !big(l[7]) ? '<span class="mute">—</span>' : ''}`], LK_HEAD));
   const PP_HEAD = ['#', 'particle', '>paid', '>positions', '>axons into it'];
   const ppRows = P.paid_particles.slice(0, EA.shown.parts).map((x, i) => tds([grp(i + 1), `${ref('particle', P.particles[x[0]])}${pv(P.particles[x[0]])}`, amtc(x[1]), grp(x[3]), grp(x[4])], PP_HEAD));
-  return `<p class="lede">the heart of it: every payout the chain made, as a receipt. a position is paid at the settlement of the epoch in which it added stake, by its share of the gradient of syntropy along its axon times the stake it added on its side (<a href="${SPEC}#52-attribution-per-position" target="_blank" rel="noopener">chain-economy §5.2–5.5</a>): the network pays for links that make its attention more ordered. the node publishes per payout the card, the owner and the amount; it does not publish the credit x(c) or the attribution a(c) of a position, so the receipts show no credit. stake at the boundary, the stake added and the 1 % cap are replayed from the staking txs.</p>
+  return `<p class="lede">the heart of it: every payout the chain made, as a receipt. a position is paid at the settlement of the epoch in which it added stake, by its share of the gradient of syntropy along its axon times the stake it added on its side (<a href="${SPEC}#52-attribution-per-position" target="_blank" rel="noopener">chain-economy §5.2–5.5</a>): the network pays for links that make its attention more ordered. the node publishes per payout the card, the owner and the amount; it does not publish the credit x(c) or the attribution a(c) of a position, so the receipts show no credit. stake at the boundary, the stake added and the 1 % cap are replayed from the staking signals.</p>
   <div class="tiles">${tile('paid for knowledge', amtc(P.earned_total), `in ${pl(P.receipts_total, 'payout')} at ${pl(eps.length, 'settlement')}`, 'hero')}
     ${tile('price of knowledge', latest ? amtc(perMilli(P.epochs[latest][0], P.epochs[latest][3])) : '—', latest ? `per millinat of syntropy gained, epoch ${grp(latest)}: paid ÷ Δ syntropy` : 'no epoch has paid for a syntropy gain yet')}
     ${tile('links paid', grp(P.links.length), 'distinct axons p → q with a paid position')}${tile('particles', grp(P.paid_particles.length), 'paid to make attended: positions on axons into them')}</div>
@@ -1308,7 +1311,7 @@ function earnSummary(E, P) {
   const MH = ['#', 'miner', '>blocks', '>share', '>earned'];
   const mRows = w.rows.slice(0, 8).map((r, i) => tds([grp(i + 1), ref('neuron', r.m), grp(r.blocks), fpct(r.share), amtc(r.earned)], MH));
   const tvOf = new Map();   // the summary leaves focus moved to the paid-knowledge page
-  return `<p class="lede">two kinds of work are paid, and only these two: header work, the proof of work that orders blocks, paid to the miner of every block; and knowledge, stake on a cyberlink that makes the network's attention more ordered, paid to positions at each settlement by how much their stake raised syntropy. everything below is read from the chain: coinbase amounts, the epoch records and the staking txs.</p>
+  return `<p class="lede">two kinds of work are paid, and only these two: header work, the proof of work that orders blocks, paid to the miner of every block; and knowledge, stake on a cyberlink that makes the network's attention more ordered, paid to positions at each settlement by how much their stake raised syntropy. everything below is read from the chain: coinbase amounts, the epoch records and the staking signals.</p>
   ${earnStrip(E)}
   <div class="cols"><div><h2>top miners · all blocks</h2>${table(MH, mRows, 'no miner yet')}<div class="pager"><a href="#/earnings/miners">last hour, day, all →</a></div></div>
   <div><h2>top stakers</h2>${P ? table(SH, sRows, 'no staker yet') : '<div class="empty">needs data/payouts.json</div>'}<div class="pager"><a href="#/earnings/stakers">stakers and positions →</a><a class="end" href="#/earnings/yield">yield →</a></div></div></div>
@@ -1411,7 +1414,7 @@ function earnClick(e) {
   return false;
 }
 
-/* who moved focus: per recorded epoch, the particles whose φ* moved most, what the epoch's txs did around them, who got paid */
+/* who moved focus: per recorded epoch, the particles whose φ* moved most, what the epoch's signals did around them, who got paid */
 async function focusMoved(st) {
   const m = await file('moved.json');
   viewLive = () => (LIVE.st['last-settled'] !== st['last-settled'] ? render(true) : null);
@@ -1422,26 +1425,26 @@ async function focusMoved(st) {
   const P = m.particles; const pid = (i) => (i === null || i === undefined ? null : P[i][0]);
   const touch = new Map();
   for (const t of x.txs) for (const i of [t[4], t[5]]) touch.set(i, (touch.get(i) || 0) + 1);
-  const MV_HEAD = ['#', 'particle', '>φ* before', '>φ* after', '>Δ', '>txs~'];
+  const MV_HEAD = ['#', 'particle', '>φ* before', '>φ* after', '>Δ', '>signals~'];
   const mvRows = (rows) => rows.map((r, i) => tds([grp(i + 1), `${ref('particle', pid(r[0]))}${pv(pid(r[0]))}`, shr(r[1]), shr(r[2]), dshare(r[2] ?? '0', r[1] ?? '0'), grp(touch.get(r[0]) || 0)], MV_HEAD));
-  const TX_HEAD = ['height', 'tx', 'kind', 'neuron', 'p → q', '>amount', 'valence~'];
-  const txRows = x.txs.slice(0, EA.shown.txs).map((t) => tds([hlink(t[0]), ref('tx', t[1]), `${kind(t[2])}${t[8] ? ' <span class="me" title="touches a particle listed above">●</span>' : ''}`, ref('neuron', t[3]),
+  const TX_HEAD = ['height', 'signal', 'kind', 'neuron', 'p → q', '>amount', 'valence~'];
+  const txRows = x.txs.slice(0, EA.shown.txs).map((t) => tds([hlink(t[0]), ref('signal', t[1]), `${kind(t[2])}${t[8] ? ' <span class="me" title="touches a particle listed above">●</span>' : ''}`, ref('neuron', t[3]),
     `${ref('particle', pid(t[4]))} → ${ref('particle', pid(t[5]))}`, big(t[6]) ? amtc(t[6]) : '<span class="mute">0</span>', t[7] === null ? '—' : val(t[7])], TX_HEAD));
   const PD_HEAD = ['position', 'neuron', 'p → q', '>paid'];
   const pdRows = x.paid.map((r) => tds([ref('card', r[0]), r[1] ? ref('neuron', r[1]) : '—', `${ref('particle', pid(r[3]))} → ${ref('particle', pid(r[4]))}${pv(pid(r[4]))}`, amtc(r[5])], PD_HEAD));
   const tv = big(x.tv);
-  const story = `between the boundaries ${hlink(x.from - 1)} and ${hlink(x.to)}, ${pl(x.stake_txs, 'staking tx')} locked ${amtc(x.locked)} and unlocked ${amtc(x.unlocked)}, and ${pl(x.cyberlinks, 'cyberlink')} ${x.cyberlinks === 1 ? 'was' : 'were'} signed. the solve at ${grp(x.to)} moved ${pct(tv, SCALE)} of all focus across ${pl(x.moved, 'particle')}${x.whole ? '' : ` (compared over the ${grp(x.compared)} particles both records hold)`}. ${x.settled_at ? `the settlement at ${hlink(x.settled_at)} paid ${amtc(x.paid_total || '0')} of a ${amtc(x.budget || '0')} budget to ${pl(x.paid.length, 'position')}.` : ''}`;
+  const story = `between the boundaries ${hlink(x.from - 1)} and ${hlink(x.to)}, ${pl(x.staking_signals ?? x.stake_txs, 'staking signal')} locked ${amtc(x.locked)} and unlocked ${amtc(x.unlocked)}, and ${pl(x.cyberlinks, 'cyberlink')} ${x.cyberlinks === 1 ? 'was' : 'were'} signed. the solve at ${grp(x.to)} moved ${pct(tv, SCALE)} of all focus across ${pl(x.moved, 'particle')}${x.whole ? '' : ` (compared over the ${grp(x.compared)} particles both records hold)`}. ${x.settled_at ? `the settlement at ${hlink(x.settled_at)} paid ${amtc(x.paid_total || '0')} of a ${amtc(x.budget || '0')} budget to ${pl(x.paid.length, 'position')}.` : ''}`;
   setTimeout(hydratePv, 0);
   return `${kick}<p class="sub">epoch ${grp(x.epoch)} against ${grp(x.prev)} · ${pl(eps.length, 'epoch')} recorded with the epoch before</p>${focusSeg('moved')}${lede}
   <div class="seg" role="group" aria-label="epoch">${eps.slice(0, 24).map((y) => `<button data-me="${y.epoch}" class="${y === x ? 'on' : ''}">${grp(y.epoch)}</button>`).join('')}<span class="mute">epoch</span></div>
   <div class="tiles">${tile('focus moved', pct(tv, SCALE), '½ Σ |Δφ*|: the share of all attention that changed place', 'hero')}${tile('Δ syntropy', nats(x.delta_syntropy), 'J(φ*ₑ) − J(φ*ₑ₋₁), the epoch record')}
-    ${tile('stake txs', grp(x.stake_txs), `locked ${grp(x.locked)} · unlocked ${grp(x.unlocked)} · ${pl(x.cyberlinks, 'cyberlink')}`, 'stake')}${tile('paid', amtc(x.paid_total || '0'), `at settlement to ${pl(x.paid.length, 'position')}`)}</div>
+    ${tile('staking signals', grp(x.staking_signals ?? x.stake_txs), `locked ${grp(x.locked)} · unlocked ${grp(x.unlocked)} · ${pl(x.cyberlinks, 'cyberlink')}`, 'stake')}${tile('paid', amtc(x.paid_total || '0'), `at settlement to ${pl(x.paid.length, 'position')}`)}</div>
   <p class="note">${story}</p>
   <div class="cols c2"><div><h2>rose</h2>${table(MV_HEAD, mvRows(x.up), 'no particle gained focus')}</div><div><h2>fell</h2>${table(MV_HEAD, mvRows(x.down), 'no particle lost focus')}</div></div>
-  <h2>what the epoch did</h2><div id="mv-txs">${table(TX_HEAD, txRows, 'no staking tx and no cyberlink in this epoch: attention moved by nothing on chain, or did not move')}${moreBtn('txs', EA.shown.txs, x.txs.length)}</div>
-  ${x.txs_total > x.txs.length ? `<p class="note">the file keeps ${grp(x.txs.length)} of the epoch's ${grp(x.txs_total)} txs, those touching the listed particles first.</p>` : ''}
+  <h2>what the epoch did</h2><div id="mv-txs">${table(TX_HEAD, txRows, 'no staking signal and no cyberlink in this epoch: attention moved by nothing on chain, or did not move')}${moreBtn('txs', EA.shown.txs, x.txs.length)}</div>
+  ${(x.signals_total ?? x.txs_total) > x.txs.length ? `<p class="note">the file keeps ${grp(x.txs.length)} of the epoch's ${grp(x.signals_total ?? x.txs_total)} signals, those touching the listed particles first.</p>` : ''}
   <h2>who got paid for it</h2>${table(PD_HEAD, pdRows, x.settled_at ? 'the settlement paid nobody: no position added stake on a side whose gradient was positive' : 'not settled yet')}
-  <p class="note">Δ in percentage points (pp) of all focus · ● marks a tx on an axon into or out of a listed particle · raw data: <a href="${DATA}/moved.json">moved.json</a>.</p>`;
+  <p class="note">Δ in percentage points (pp) of all focus · ● marks a signal on an axon into or out of a listed particle · raw data: <a href="${DATA}/moved.json">moved.json</a>.</p>`;
 }
 
 /* the graph: the top particles by φ* and every staked axon, laid out by force, drawn on a canvas */
@@ -1566,9 +1569,9 @@ function notFound(what, why) {
 async function search(q) {
   q = decodeURIComponent(q).trim().toLowerCase().replace(/^0x/, '').replace(/[\s,_]/g, '');
   if (/^\d+$/.test(q)) { location.replace(`#/block/${Number(q)}`); return null; }
-  if (!HEX64.test(q)) return notFound(`“${esc(q.slice(0, 80))}”`, 'search takes a height, or a 64-hex block id, tx id, neuron, particle or card');
+  if (!HEX64.test(q)) return notFound(`“${esc(q.slice(0, 80))}”`, 'search takes a height, or a 64-hex block id, signal id, neuron, particle or card');
   const go = (k) => { location.replace(`#/${k}/${q}`); return null; };
-  if ((await req(`/tx/${q}`)).ok) return go('tx');
+  if ((await req(`${SIGNAL_API}/${q}`)).ok) return go('signal');
   if ((await req(`/block/${q}`)).ok) return go('block');
   const [bal, nonce] = await Promise.all([api(`/balance/${q}`), api(`/nonce/${q}`)]);
   if ((bal && big(bal.balance) > 0n) || (nonce && Number(nonce.confirmed) > 0)) return go('neuron');
@@ -1582,7 +1585,8 @@ const ROUTES = [
   [/^blocks$/, () => blocks(), 'blocks'],
   [/^blocks\/(\d+)$/, blocks, 'blocks'],
   [/^block\/([0-9a-f]{64}|\d+)$/, block, 'blocks'],
-  [/^tx\/([0-9a-f]{64})$/, tx, 'blocks'],
+  [/^signal\/([0-9a-f]{64})$/, signalPage, 'blocks'],
+  [/^tx\/([0-9a-f]{64})$/, (id) => { location.replace(`#/signal/${id}`); return null; }, 'blocks'],   // old links: #/tx/<id> → #/signal/<id>
   [/^neuron\/([0-9a-f]{64})$/, neuron, ''],
   [/^particle\/([0-9a-f]{64})$/, particle, 'focus'],
   [/^card\/([0-9a-f]{64})$/, card, 'staking'],
@@ -1605,7 +1609,7 @@ async function render(soft) {
   const hit = ROUTES.find(([re]) => re.test(low));
   const view = $('#view');
   document.querySelectorAll('#tabs a').forEach((a) => a.classList.toggle('on', !!hit && a.dataset.tab === hit[2]));
-  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, earnings (miners, stakers, yield, paid knowledge, emission), blocks, block, tx, neuron, particle, card, epochs, epoch, staking, history, focus (particles, axons, neurons, who moved focus, graph) and network'); return; }
+  if (!hit) { viewLive = null; view.innerHTML = notFound('no such page', 'the explorer knows overview, earnings (miners, stakers, yield, paid knowledge, emission), blocks, block, signal, neuron, particle, card, epochs, epoch, staking, history, focus (particles, axons, neurons, who moved focus, graph) and network'); return; }
   if (!soft) { viewLive = null; view.innerHTML = `<p class="muted pad">reading the node…</p>`; }
   try {
     const html = await hit[1](...(low.match(hit[0]).slice(1)));
