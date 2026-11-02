@@ -107,6 +107,16 @@ const grp = (v) => {
 };
 let DENOM = '';
 const amt = (v) => `${grp(v)}<span class="u">${esc(DENOM)}</span>`;
+// compact amount for tiles: SI prefix over the exact integer (raw units, no decimals invented), the exact value under it
+const amtc = (v) => {
+  const raw = String(v ?? ''); const neg = raw.startsWith('-'); const d = neg ? raw.slice(1) : raw;
+  if (!/^\d+$/.test(d)) return amt(v);
+  if (d.length <= 6) return amt(v);
+  const P = ['', 'k', 'M', 'G', 'T', 'P', 'E', 'Z', 'Y']; const i = Math.min(Math.floor((d.length - 1) / 3), P.length - 1);
+  const n = d.length - 3 * i; const dec = Math.max(1, 5 - n);
+  const head = `${d.slice(0, n)}.${d.slice(n, n + dec)}`;
+  return `<span title="${grp(raw)} ${esc(DENOM)}">${neg ? '−' : ''}${head}<span class="u">${P[i]}${SEP}${esc(DENOM)}</span></span><em class="exact">${grp(raw)}</em>`;
+};
 const big = (v) => { try { return BigInt(v); } catch { return 0n; } };
 const si = (x, unit = '') => {
   if (x === null || x === undefined || !isFinite(x)) return '—';
@@ -238,7 +248,7 @@ function tick() {
 
 /* ------------------------------------------------------------------ building blocks */
 const kv = (rows) => `<div class="kv">${rows.filter(Boolean).map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join('')}</div>`;
-const tile = (label, value, small = '', cls = '') => `<div class="tile ${cls}${String(value).replace(/<[^>]*>[^<]*<\/span>|<[^>]*>/g, '').length > 13 ? ' long' : ''}"><b>${value}</b><span>${label}</span>${small ? `<small>${small}</small>` : ''}</div>`;
+const tile = (label, value, small = '', cls = '') => `<div class="tile ${cls}${String(value).replace(/<em class="exact">[^<]*<\/em>/g, '').replace(/<[^>]*>[^<]*<\/span>|<[^>]*>/g, '').length > 13 ? ' long' : ''}"><b>${value}</b><span>${label}</span>${small ? `<small>${small}</small>` : ''}</div>`;
 const table = (head, rows, empty = 'nothing here yet', id = '') => rows.length
   ? `<div class="tbl"><table><thead><tr>${head.map((h) => `<th class="${h.startsWith('>') ? 'r' : ''}${h.includes('~') ? ' hide-s' : ''}">${h.replace(/^>|~/g, '')}</th>`).join('')}</tr></thead><tbody${id ? ` id="${id}"` : ''}>${rows.join('')}</tbody></table></div>`
   : `<div class="empty">${empty}</div>`;
@@ -354,10 +364,10 @@ function overviewTiles(stk) {
     tile('block time', isFinite(med) ? `${med}<span class="u">s</span>` : '—', `median over the last ${grp(gaps.length)} blocks · target ${TARGET}${SEP}s`),
     tile('hashrate<span class="est">estimate</span>', si(rate, 'H/s'), how),
     tile('difficulty', si(Number(work(st.bits || '0x1e010000'))), `expected hashes per block · bits ${esc(st.bits)} → next ${esc(st['next-bits'] || '—')}`),
-    tile('supply', amt(st.supply), `raw units · subsidy ${grp(st.subsidy)} per block`),
-    tile('active stake', amt(st['active-stake']), `${positions}total ${grp(st['total-stake'])} · <a href="#/staking">staking →</a>`, 'stake'),
+    tile('supply', amtc(st.supply), `raw units · subsidy ${grp(st.subsidy)} per block`, 'wide'),
+    tile('active stake', amtc(st['active-stake']), `${positions}total ${grp(st['total-stake'])} · <a href="#/staking">staking →</a>`, 'stake wide'),
     tile('to stakers', bps(st['focus-bps']), `of each block's subsidy: ${grp(cut.toString())} per block into the focus pool`),
-    tile('pool', amt(st.pool), `paid out a quarter per settlement · settlement ${st['settlement-ok'] === 'true' ? 'ok' : esc(st['settlement-ok'] || '—')}`),
+    tile('pool', amtc(st.pool), `paid out a quarter per settlement · settlement ${st['settlement-ok'] === 'true' ? 'ok' : esc(st['settlement-ok'] || '—')}`, 'wide'),
     tile('neurons', grp(st.neurons), 'keys with state'),
     tile('particles', grp(particles), 'in the graph of the last settlement'),
     tile('axons', grp(st.axons), 'cyberlinked pairs p → q'),
@@ -517,7 +527,7 @@ async function neuron(id) {
   const quiet = big(b.balance) === 0n && !Number(nonce && nonce.confirmed) && !cs.length;
   return `<p class="kick">neuron</p><h1>neuron <em>${short(id)}</em></h1><p class="sub">${full(id)}</p>
   ${quiet ? `<p class="note">this key holds nothing and has signed nothing on this chain. if it is a particle, see <a href="#/particle/${id}">its focus</a>.</p>` : ''}
-  <h2>balance</h2><div class="tiles">${tile('balance', amt(b.balance), `at height ${grp(b.height)}`, 'hero')}${tile('spendable', amt(b.spendable), locked > 0n ? `${grp(locked.toString())} held but not yet spendable (maturing coinbase)` : 'all of it spendable')}${tile('nonce', grp(nonce ? nonce.confirmed : '—'), `next to sign: ${grp(nonce ? nonce.nonce : '—')}`)}${tile('positions', grp(cs.length), cs.length ? `staked ${grp(cs.reduce((s, c) => s + big(c.stake), 0n).toString())} · earned ${grp(earnedAll.toString())}` : 'staked cyberlinks authored')}</div>
+  <h2>balance</h2><div class="tiles">${tile('balance', amtc(b.balance), `at height ${grp(b.height)}`, 'hero')}${tile('spendable', amtc(b.spendable), locked > 0n ? `${grp(locked.toString())} held but not yet spendable (maturing coinbase)` : 'all of it spendable')}${tile('nonce', grp(nonce ? nonce.confirmed : '—'), `next to sign: ${grp(nonce ? nonce.nonce : '—')}`)}${tile('positions', grp(cs.length), cs.length ? `staked ${grp(cs.reduce((s, c) => s + big(c.stake), 0n).toString())} · earned ${grp(earnedAll.toString())}` : 'staked cyberlinks authored')}</div>
   <p class="note">token ${short(b.token)}${cp(b.token || '')} · ${esc(b.denom || DENOM)} · supply ${grp(b.supply)}</p>
   <h2>staked positions</h2>${table(cHead, cRows, 'no positions: no staked cyberlink authored by this neuron')}
   <h2>payouts</h2>${table(pHead, pRows, `no payouts in the last ${grp(Math.min(last, 60))} settled epochs`)}`;
@@ -627,7 +637,7 @@ async function epoch(n) {
   const pHead = ['card', 'owner', '>amount'];
   const pRows = (e.payouts || []).map((p) => tds([ref('card', p.card), ref('neuron', p.owner), grp(p.amount)], pHead));
   return `<p class="kick">epoch</p><h1>epoch <em>${grp(e.epoch)}</em></h1><p class="sub">digest ${full(e.digest)}</p>${crumbs}
-  <h2>settlement</h2><div class="tiles">${tile('budget', amt(e.budget), 'a quarter of the pool at settlement', 'hero')}${tile('paid', amt(e.paid), `to ${grp((e.payouts || []).length)} positions`)}${tile('rewarded', grp(e.rewarded), 'positions with positive credit')}${tile('Δ syntropy', grp(e.delta_syntropy), 'J(φ*ₑ) − J(φ*ₑ₋₁), recorded')}</div>
+  <h2>settlement</h2><div class="tiles">${tile('budget', amtc(e.budget), 'a quarter of the pool at settlement', 'hero')}${tile('paid', amtc(e.paid), `to ${grp((e.payouts || []).length)} positions`)}${tile('rewarded', grp(e.rewarded), 'positions with positive credit')}${tile('Δ syntropy', grp(e.delta_syntropy), 'J(φ*ₑ) − J(φ*ₑ₋₁), recorded')}</div>
   <h2>record</h2>${kv([
     ['boundary', hlink(e.boundary)], ['settled at', hlink(e.settled_at)],
     ['particles', grp(e.particles)], ['axons', grp(e.axons)], ['syntropy', grp(e.syntropy)], ['focus', `${grp(e.focus_bps)}${SEP}bps of the subsidy in epoch ${grp(e.epoch + 1)}`],
@@ -687,10 +697,10 @@ async function staking() {
   return `<p class="kick">staking · ${esc(st.chain)}</p><h1>staked <em>cyberlinks</em></h1>
   <p class="lede">how staking pays: a cyberlink with amount &gt; 0 and valence ≠ 0 locks stake on p → q for at least ${grp(minLock)} blocks; every block sends ${bps(st['focus-bps'])} of its subsidy to the focus pool; at each settlement (boundary + ${D} blocks) a quarter of the pool is divided among the positions that took their axon side to a new high in the epoch, by their share of the syntropy gain, at most 1 % of the stake each added (<a href="https://github.com/cyberia-to/cybernode/blob/main/specs/chain-economy.md#5-settlement" target="_blank" rel="noopener">chain-economy §5–6</a>).</p>
   <h2>now</h2><div class="tiles">
-    ${tile('active stake', amt(st['active-stake']), 'valence ≠ 0: the stake that earns and sets the split', 'hero')}
-    ${tile('total stake', amt(st['total-stake']), `incl. passive (valence 0) · stake keys ${st['stake-keys-match'] === 'true' ? 'match the cards' : esc(st['stake-keys-match'])}`)}
+    ${tile('active stake', amtc(st['active-stake']), 'valence ≠ 0: the stake that earns and sets the split', 'hero')}
+    ${tile('total stake', amtc(st['total-stake']), `incl. passive (valence 0) · stake keys ${st['stake-keys-match'] === 'true' ? 'match the cards' : esc(st['stake-keys-match'])}`)}
     ${tile('to stakers', bps(st['focus-bps']), `of the subsidy: ${grp(cut.toString())} of ${grp(st.subsidy)} per block; the rest goes to the miner · cap 50 %`)}
-    ${tile('pool', amt(st.pool), `next settlement at ${hlink(settleNext)} in ${grp(blocksToSettle)} blocks; its budget ≈ ${grp((poolAt / 4n).toString())} (a quarter)`)}
+    ${tile('pool', amtc(st.pool), `next settlement at ${hlink(settleNext)} in ${grp(blocksToSettle)} blocks; its budget ≈ ${grp((poolAt / 4n).toString())} (a quarter)`)}
     ${tile('positions', grp(stk ? stk.positions_open : '—'), stk ? `open · ${grp(positions.length - stk.positions_open)} closed · earned in all ${grp(stk.earned_total)}` : 'needs the index (data/stakes.json)')}
     ${tile('minimum lock', `${grp(minLock)}<span class="u">blocks</span>`, `≈ ${dur(minLock * TARGET)} · any increase restarts it`)}
   </div>

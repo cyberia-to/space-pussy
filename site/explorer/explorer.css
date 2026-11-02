@@ -45,11 +45,13 @@ h2{font-family:var(--voice);font-weight:700;font-size:13px;letter-spacing:.22em;
 .crumbs a:hover{opacity:1;border-color:var(--pink)}
 
 /* tiles */
-.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));grid-auto-flow:row dense;gap:10px}
 .tile{border:1px solid var(--line);border-radius:14px;padding:14px 14px 12px;background:var(--panel)}
 .tile b{display:block;font-family:var(--sans);font-weight:700;font-size:clamp(20px,2.2vw,28px);line-height:1.05;font-variant-numeric:tabular-nums;letter-spacing:-.01em;overflow-wrap:anywhere}
 .tile.long b{font-size:clamp(15px,1.45vw,19px);line-height:1.2}
 .tile b .u{white-space:nowrap}
+.tile b em.exact{display:block;font:12px/1.3 var(--mono);font-style:normal;font-weight:400;letter-spacing:0;color:var(--mute);margin-top:6px;text-shadow:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile.wide{grid-column:span 2}
 .tile b .u{font:12px var(--mono);color:var(--mute);margin-left:6px;letter-spacing:0}
 .tile>span{display:block;font:11px var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--mute);margin-top:7px}
 .tile small{display:block;font:11.5px var(--mono);color:var(--mute);margin-top:4px;line-height:1.4}
