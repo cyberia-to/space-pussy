@@ -191,3 +191,24 @@ tr.fresh td:first-child a{animation:slide .5s ease-out}
 .lede a{color:var(--pink);text-decoration:none}
 .sub+.tiles,.sub+.live{margin-top:16px}
 .me{color:var(--pink)}
+
+/* v3: focus indexes — axons, neurons, focus × stake */
+.seg a{font:12px var(--mono);letter-spacing:.12em;text-transform:uppercase;padding:7px 14px;border:1px solid rgba(255,255,255,.2);border-radius:999px;text-decoration:none;opacity:.75}
+.seg a:hover{opacity:1}
+.seg a.on{opacity:1;border-color:var(--pink);color:var(--pink)}
+td small.sh{display:block;font-size:11px;color:var(--mute);margin-top:2px}
+td em.exact{display:none}
+td .u{margin-left:3px}
+a.gw{margin-left:6px;color:var(--mute);border:0!important;font-size:12px}
+a.gw:hover{color:var(--pink)}
+th button.srt{background:none;border:0;padding:0;color:inherit;font:inherit;letter-spacing:inherit;text-transform:inherit;cursor:pointer}
+th button.srt:hover,th button.srt.on{color:var(--pink)}
+button.more{font:12px var(--mono);letter-spacing:.08em;padding:6px 14px;border:1px solid rgba(255,255,255,.2);border-radius:999px;background:none;color:var(--fg);cursor:pointer}
+button.more:hover{border-color:var(--pink);color:var(--pink)}
+.fxs canvas{height:360px;cursor:pointer}
+.fxs .ct{text-transform:none;letter-spacing:.06em}
+.chart .lg i.dot{width:9px;height:9px;border-radius:50%}
+.tile b .pos,.tile b .neg{font:inherit}
+.lede+.tiles,.note+.tiles{margin-top:16px}
+.note em.exact,.tipbox em.exact{display:none}
+@media (max-width:900px){#fx-axons td .cp,#fx-neurons td .cp{display:none}#fx-axons td,#fx-neurons td{padding:8px 7px}}

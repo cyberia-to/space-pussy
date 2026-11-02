@@ -15,8 +15,13 @@ tip and truncates the tail), and every --publish seconds writes three static fil
                 with what each paid; earned per position = Σ payouts of its card
   summary.json  tip, chainwork, recent hashrate and block time, totals, top miners
 
+and once per settled epoch (focus.py, in a thread): the full φ* of the epoch into --data/focus/<epoch>.json (the node keeps
+only the last one), and axons.json, neurons.json, particles.json, phi/<xx>.json from φ*, the genesis export under
+--genesis and the cyberlinks in the blocks.
+
 each file is written whole and renamed into place, so a reader never sees half of one.
-usage: indexer.py --node http://127.0.0.1:7783 --data /srv/edge/data/explorer --site <site>/explorer/data
+usage: indexer.py --node http://127.0.0.1:7783 --data /srv/edge/data/explorer --site <site>/explorer/data \
+                  --genesis /srv/edge/data/explorer/genesis
 """
 import argparse
 import json
@@ -26,16 +31,20 @@ import signal
 import sys
 import time
 import urllib.error
+import threading
 import urllib.request
 from array import array
 from bisect import bisect_left, bisect_right
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
+from focus import FocusIndex
+
 TARGET = 30                 # s per block, the ASERT target (cybernode specs/chain.md)
 ROLL = 12                   # blocks in the rolling hashrate estimate behind a bin's min/max
 REORG_MAX = 5000            # deeper than this, rebuild from genesis
 VERSION = 1
+BLOCKS_FORMAT = 2           # 2: blocks.jsonl lines carry every cyberlink ('lk' for amount 0); an older file is re-walked
 
 
 def log(*a):
@@ -89,6 +98,14 @@ def stake_tx(t):
     return None
 
 
+def plain_link(t):
+    """a cyberlink with no stake: it adds an axon to the graph and earns nothing."""
+    x = t.get('tx') or {}
+    if t.get('kind') == 'cyberlink' and int(x.get('amount') or 0) == 0:
+        return {'txid': t['txid'], 'from': x['from'], 'p': x['p'], 'q': x['q']}
+    return None
+
+
 def sig(x, n=4):
     """a float rounded to n significant digits, for compact JSON."""
     if x is None or not math.isfinite(x):
@@ -114,6 +131,8 @@ class Index:
         self.ids = bytearray()      # 32 bytes per height
         self.miners, self.miner_ix = [], {}
         self.stx = []               # (height, stake tx dict), in chain order
+        self.links = []             # (height, {txid, from, p, q}) of every cyberlink on chain, staked or not
+        self.token = None           # the native token id, from /balance
         self.epochs = {}            # epoch -> record without the raw bytes
         self.card_ids = {}          # "from:p:q" -> card id, kept across unlocks
         self.chain = ''
@@ -127,6 +146,14 @@ class Index:
                 self.card_ids = json.load(open(self.cards_path))
             except ValueError:
                 self.card_ids = {}
+        meta = os.path.join(self.data, 'blocks.format')
+        fmt = open(meta).read().strip() if os.path.exists(meta) else ''
+        if fmt != str(BLOCKS_FORMAT):
+            if os.path.exists(self.path):
+                log(f'blocks.jsonl is format {fmt or 1}, this indexer writes {BLOCKS_FORMAT}: walking the chain again')
+                os.replace(self.path, self.path + '.old')
+            with open(meta, 'w') as f:
+                f.write(f'{BLOCKS_FORMAT}\n')
         if not os.path.exists(self.path):
             return
         good = 0
@@ -165,6 +192,10 @@ class Index:
         self.ids += bytes.fromhex(b['id'])
         for s in b.get('stx') or ():
             self.stx.append((b['h'], s))
+            if s['kind'] == 'cyberlink':
+                self.links.append((b['h'], {'txid': s['txid'], 'from': s['from'], 'p': s['p'], 'q': s['q']}))
+        for l in b.get('lk') or ():
+            self.links.append((b['h'], l))
 
     def id_at(self, h):
         return self.ids[h * 32:(h + 1) * 32].hex()
@@ -189,6 +220,7 @@ class Index:
             del a[n:]
         del self.ids[n * 32:]
         self.stx = [(h, s) for h, s in self.stx if h < n]
+        self.links = [(h, l) for h, l in self.links if h < n]
         with open(self.path, 'r+b') as f:
             f.truncate(cut)
             f.flush()
@@ -211,17 +243,22 @@ class Index:
 
     def fetch_block(self, h):
         b = self.node.get(f'/block/{h}')
-        stx = []
+        stx, lk = [], []
         if len(b.get('txids') or ()) > 1:
             for tid in b['txids'][1:]:
                 t = self.node.get(f'/tx/{tid}')
                 s = stake_tx(t)
                 if s:
                     stx.append(s)
+                pl = plain_link(t)
+                if pl:
+                    lk.append(pl)
         rec = {'h': b['height'], 'id': b['id'], 'prev': b['prev'], 't': b['time'], 'bits': b['bits'],
                'work': work_of(b['bits']), 'txs': b['txs'], 'size': b['size'], 'miner': b.get('miner'), 'fees': b.get('fees', 0)}
         if stx:
             rec['stx'] = stx
+        if lk:
+            rec['lk'] = lk
         return rec
 
     def step(self, pool, batch):
@@ -248,6 +285,13 @@ class Index:
                 self.rewind()
             return len(keep)
         return len(keep)
+
+    def native_token(self):
+        """the id of the native token: the token the node reports a balance in."""
+        if not self.token:
+            self.token = self.node.get('/balance/' + '00' * 32, text=True)
+            self.token = dict(l.split(': ', 1) for l in self.token.splitlines() if ': ' in l)['token']
+        return self.token
 
     # ------------------------------------------------------------------ the node's economy
     def refresh_economy(self):
@@ -439,14 +483,14 @@ class Index:
         summary = {'version': VERSION, 'chain': self.chain, 'generated': now, 'height': tip, 'id': self.id_at(tip), 'time': self.t[tip],
                    'chainwork': str(sum(work_of(b) for b in self.bits[1:])), 'difficulty': str(work_of(self.bits[tip])),
                    'hashrate_100': sig(hr100), 'hashrate_1000': sig(hr1k), 'block_time_100': sig(bt100), 'block_time_1000': sig(bt1k),
-                   'txs_total': sum(self.txs) - (len(self.txs) - 1), 'staking_txs': len(self.stx), 'positions_open': stakes['positions_open'],
+                   'txs_total': sum(self.txs) - (len(self.txs) - 1), 'staking_txs': len(self.stx), 'cyberlinks': len(self.links), 'positions_open': stakes['positions_open'],
                    'active_stake': str(act), 'total_stake': str(tot), 'epochs_settled': len(self.epochs), 'earned_total': stakes['earned_total'],
                    'miners_1000': [{'miner': self.miners[m], 'blocks': n} for m, n in top], 'blocks_file_bytes': os.path.getsize(self.path)}
         self.write('summary.json', summary)
 
     def write(self, name, obj):
         path = os.path.join(self.site, name)
-        tmp = f'{path}.{os.getpid()}.tmp'
+        tmp = f'{path}.{os.getpid()}.{threading.get_ident()}.tmp'
         with open(tmp, 'w') as f:
             json.dump(obj, f, separators=(',', ':'))
         os.chmod(tmp, 0o644)
@@ -463,6 +507,8 @@ def main():
     ap.add_argument('--poll', type=float, default=2.0, help='seconds between /tip reads once caught up')
     ap.add_argument('--publish', type=float, default=30.0, help='seconds between writes of the site files')
     ap.add_argument('--points', type=int, default=2000, help='max bins per series')
+    ap.add_argument('--genesis', default='/srv/edge/data/explorer/genesis', help='the genesis export (links.tsv, balances.tsv, accounts.tsv, particles.tsv)')
+    ap.add_argument('--focus-rate', type=float, default=50.0, help='/focus/<particle> reads per second when recording an epoch')
     ap.add_argument('--once', action='store_true', help='catch up, publish once, exit')
     a = ap.parse_args()
 
@@ -471,6 +517,9 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: stop.append(1))
     node = Node(a.node)
     ix = Index(node, a.data, a.site, a.workers, a.points)
+    fx = FocusIndex(ix, a.genesis, a.focus_rate) if os.path.exists(os.path.join(a.genesis, 'links.tsv')) else None
+    if not fx:
+        log(f'{a.genesis}/links.tsv: not found; the axon and neuron index is off')
     last_pub, backoff, eco = 0.0, 1.0, {}
     with ThreadPoolExecutor(max_workers=a.workers) as pool:
         while not stop:
@@ -487,7 +536,11 @@ def main():
                     eco = ix.refresh_economy()
                     ix.publish(eco)
                     last_pub = time.time()
+                    if fx and caught_up:
+                        fx.tick(eco)
                     if a.once and caught_up:
+                        if fx and fx.busy:
+                            fx.busy.join()
                         break
                 backoff = 1.0
                 if caught_up:
