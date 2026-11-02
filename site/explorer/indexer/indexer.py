@@ -9,7 +9,7 @@ tip and truncates the tail), and every --publish seconds writes three static fil
   history.json  the whole chain downsampled to <= --points bins per range (all, day, hour); per bin the
                 end height and time, hashrate (Σ work ÷ Δt, with the min/max of a 12-block rolling
                 estimate), difficulty (expected hashes per block = 2^256 / (target + 1), mean/min/max),
-                block time (mean/min/max), transactions (coinbase excluded), active and total stake
+                block time (mean/min/max), signals (coinbase excluded), active and total stake
   stakes.json   every staking position (cyberlink with amount > 0, unlock kind 6, payout kind 7),
                 replayed and joined with /cards/<neuron> for the current card, and the settled epochs
                 with what each paid; earned per position = Σ payouts of its card
@@ -94,7 +94,7 @@ class Node:
 
 
 def stake_tx(t):
-    """the staking part of a decoded transaction, or None."""
+    """the staking part of a decoded signal, or None."""
     k, x = t.get('kind'), t.get('tx') or {}
     if k == 'cyberlink' and int(x.get('amount') or 0) > 0:
         return {'txid': t['txid'], 'kind': k, 'from': x['from'], 'p': x['p'], 'q': x['q'],
@@ -132,14 +132,14 @@ class Index:
         self.cards_path = os.path.join(data, 'cards.json')
         self.t = array('q')         # block time, by height
         self.bits = array('L')      # compact target, by height
-        self.txs = array('l')       # transactions incl. coinbase
+        self.txs = array('l')       # signals incl. coinbase
         self.size = array('l')
-        self.fees = array('q')      # Σ fees of the block's transactions, all to its miner (chain-economy §6.4)
+        self.fees = array('q')      # Σ fees of the block's signals, all to its miner (chain-economy §6.4)
         self.miner = array('l')     # index into self.miners, -1 = none
         self.off = array('q')       # byte offset of each line in blocks.jsonl
         self.ids = bytearray()      # 32 bytes per height
         self.miners, self.miner_ix = [], {}
-        self.stx = []               # (height, stake tx dict), in chain order
+        self.stx = []               # (height, staking signal dict), in chain order
         self.links = []             # (height, {txid, from, p, q}) of every cyberlink on chain, staked or not
         self.token = None           # the native token id, from /balance
         self.epochs = {}            # epoch -> record without the raw bytes
@@ -183,7 +183,7 @@ class Index:
         if good != os.path.getsize(self.path):
             with open(self.path, 'r+b') as f:
                 f.truncate(good)
-        log(f'loaded {len(self.t)} blocks, {len(self.stx)} staking txs from {self.path}')
+        log(f'loaded {len(self.t)} blocks, {len(self.stx)} staking signals from {self.path}')
 
     def _push(self, b, pos):
         self.t.append(int(b['t']))
@@ -326,7 +326,7 @@ class Index:
 
     # ------------------------------------------------------------------ outputs
     def replay(self):
-        """positions and the stake change points, from the staking txs in chain order."""
+        """positions and the stake change points, from the staking signals in chain order."""
         cards, points = {}, [(0, 0, 0)]
         active = total = 0
         for h, s in self.stx:
@@ -442,7 +442,7 @@ class Index:
         hist = {'version': VERSION, 'chain': self.chain, 'generated': now, 'tip': tip, 'tip_time': self.t[tip], 'target': TARGET,
                 'note': 'per bin: h = last height, t = its time; hr = Σ work ÷ Δt (H/s) and bt = mean block time (s), both over the bin or the 12 blocks '
                         'ending at it when the bin is shorter; hr_lo/hr_hi = range of a 12-block rolling estimate, bt_lo/bt_hi = fastest/slowest block; '
-                        'd = expected hashes per block 2^256/(target+1); tx = transactions, coinbase excluded; '
+                        'd = expected hashes per block 2^256/(target+1); tx = signals, coinbase excluded; '
                         'sa/st = active/total stake at the bin end (floats for plotting; exact values in stakes.json); fb = focus_bps in force for the bin\'s last '
                         'block, the share of the subsidy that goes to the focus pool, in basis points (chain-economy §6.1). genesis-to-block-1 is left out.',
                 'smooth': ROLL, 'ranges': {'all': self.bins(2, tip, points, bps_at), 'day': self.bins(self.since(86400), tip, points, bps_at),
@@ -513,7 +513,9 @@ class Index:
         summary = {'version': VERSION, 'chain': self.chain, 'generated': now, 'height': tip, 'id': self.id_at(tip), 'time': self.t[tip],
                    'chainwork': str(sum(work_of(b) for b in self.bits[1:])), 'difficulty': str(work_of(self.bits[tip])),
                    'hashrate_100': sig(hr100), 'hashrate_1000': sig(hr1k), 'block_time_100': sig(bt100), 'block_time_1000': sig(bt1k),
-                   'txs_total': sum(self.txs) - (len(self.txs) - 1), 'staking_txs': len(self.stx), 'cyberlinks': len(self.links), 'positions_open': stakes['positions_open'],
+                   'signals_total': sum(self.txs) - (len(self.txs) - 1), 'staking_signals': len(self.stx),
+                   'txs_total': sum(self.txs) - (len(self.txs) - 1), 'staking_txs': len(self.stx),   # signals_total/staking_signals; the old keys stay for one release
+                   'cyberlinks': len(self.links), 'positions_open': stakes['positions_open'],
                    'active_stake': str(act), 'total_stake': str(tot), 'epochs_settled': len(self.epochs), 'earned_total': stakes['earned_total'],
                    'miners_1000': [{'miner': self.miners[m], 'blocks': n} for m, n in top], 'blocks_file_bytes': os.path.getsize(self.path),
                    'earnings': self.earn.totals}

@@ -14,7 +14,7 @@ outputs (site data)
 
 the node publishes per settled epoch only the payouts with amount > 0 ({card, owner, amount}) — no per-position credit x(c), no
 attribution a(c), no high-water mark (cybernode rs/src/chain/economy_api.rs). the receipts carry what the chain says plus what
-follows from the staking txs (stake at the boundaries, stake added, the cap); they never estimate a credit.
+follows from the staking signals (stake at the boundaries, stake added, the cap); they never estimate a credit.
 """
 import math
 
@@ -342,7 +342,7 @@ class Earnings:
             'note': 'receipts: [epoch, card, author neuron, payout owner, p, q (indexes into particles), valence, the card\'s stake at the epoch\'s boundary, '
                     'stake it added on its side since the boundary before (§5.2), its cap = floor(added · 10,000 / 10^6) (§5.5), amount paid], newest first. '
                     'the node publishes {card, owner, amount} per payout and no per-position credit or attribution; stake, added and cap are replayed from '
-                    'the staking txs. epochs: {epoch: [paid, budget, rewarded, delta syntropy (raw, 2^60 nats), settled at]}. links: [p, q, Σ paid, payouts, '
+                    'the staking signals. epochs: {epoch: [paid, budget, rewarded, delta syntropy (raw, 2^60 nats), settled at]}. links: [p, q, Σ paid, payouts, '
                     'positions, epochs, stake for now, stake against now]; particles (paid to make attended, Σ over positions on axons into q): [q, Σ paid, '
                     'payouts, positions, axons]. yield y = earned ÷ Σ stake held at each settled boundary (se), apr = y · 4,380 epochs a year (simple).',
             'particles': plist, 'epochs': epochs, 'receipts': receipts[:RECEIPTS], 'receipts_total': len(receipts),

@@ -4,7 +4,7 @@ inputs
   the genesis export (`soft3 genesis build --chain pussy-rc --snapshot … --export DIR`): links.tsv (neuron, p, q, …,
   address), balances.tsv (owner, token, amount, address, denom), accounts.tsv (address, owner), particles.tsv
   (particle, cid). not consensus, but byte-for-byte the frames of the genesis file the node runs.
-  the staking txs and the plain cyberlinks the indexer reads from the blocks.
+  the staking signals and the plain cyberlinks the indexer reads from the blocks.
   φ* of the last settled epoch from the node: /focus?top=1000 (the node caps the list at 1,000) and /focus/<particle>
   for every particle of the graph, throttled, because the node keeps only the last settled φ*.
 
@@ -131,7 +131,7 @@ class FocusIndex:
 
     # ------------------------------------------------------------------ the graph at a boundary
     def sides_at(self, boundary):
-        """per card key the stake and valence after the block at `boundary`, replayed from the staking txs (§2.4)."""
+        """per card key the stake and valence after the block at `boundary`, replayed from the staking signals (§2.4)."""
         cards = {}
         for h, s in list(self.ix.stx):
             if h > boundary:
@@ -437,13 +437,13 @@ class FocusIndex:
                 paid.append([pay['card'], n, pay['owner'], P(pp) if pp else None, P(qq) if qq else None, str(pay['amount'])])
             row = lambda p: [P(p), str(prev.get(p)) if p in prev else None, str(cur.get(p)) if p in cur else None, str(d[p])]
             out.append({'epoch': x, 'prev': x - 1, 'whole': bool(whole), 'compared': len(ids), 'moved': moved_n, 'tv': str(tv),
-                        'from': lo, 'to': hi, 'cyberlinks': len(w_links), 'stake_txs': len(w_stx),
+                        'from': lo, 'to': hi, 'cyberlinks': len(w_links), 'staking_signals': len(w_stx), 'stake_txs': len(w_stx),
                         'locked': str(sum(s['amount'] for _, s in w_stx if s['kind'] == 'cyberlink')), 'unlocked': str(sum(s['amount'] for _, s in w_stx if s['kind'] == 'unlock')),
                         'settled_at': rec.get('settled_at'), 'budget': str(rec.get('budget', 0)) if rec else None, 'paid_total': str(rec.get('paid', 0)) if rec else None,
                         'delta_syntropy': str(rec.get('delta_syntropy')) if rec else None,
-                        'up': [row(p) for p in up], 'down': [row(p) for p in down], 'txs': txs[:120], 'txs_total': len(txs), 'paid': paid})
+                        'up': [row(p) for p in up], 'down': [row(p) for p in down], 'txs': txs[:120], 'signals_total': len(txs), 'txs_total': len(txs), 'paid': paid})
         ix.write('moved.json', {**common, 'note': 'per epoch x (newest first) with φ* recorded at x and x−1: tv = ½ Σ|Δφ*| (raw, 2^60 = all focus), the focus that '
-                                'changed place; up/down: [particle, φ* at x−1, φ* at x, Δ] (raw); txs: the epoch\'s staking txs and cyberlinks [height, txid, kind, '
+                                'changed place; up/down: [particle, φ* at x−1, φ* at x, Δ] (raw); txs: the epoch\'s staking signals and cyberlinks [height, signal id, kind, '
                                 'neuron, p, q, amount, valence, touches a listed particle]; paid: the positions its settlement paid [card, author, owner, p, q, amount]. '
                                 'whole = both records hold every particle; otherwise only the particles in both are compared. a cyberlink without stake has '
                                 'weight 0 in φ* unless genesis frames carry its axon (chain-economy §4.2).',
