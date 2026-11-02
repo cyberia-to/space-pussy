@@ -18,7 +18,9 @@ focus flow of an axon (the share of p's focus that diffusion sends along it):
 focus authored by a neuron = Σ over the axons it touches of flow · c_n / A_pq, c_n = its genesis weight on the axon
   + its stake for − its stake against (so the shares of one axon sum to 1; stake against counts negative).
 
-outputs (site data): axons.json, neurons.json, particles.json, phi/<xx>.json (per-particle series of the last epochs).
+outputs (site data): axons.json, neurons.json, particles.json, phi/<xx>.json (per-particle series of the last epochs),
+moved.json (per recorded epoch: the particles whose φ* moved most, the cyberlinks and stake changes of the epoch that touch them, and
+the positions paid at its settlement) and graph.json (the top particles by φ*, the endpoints of every staked axon, the axons among them).
 record (data dir): focus/<epoch>.json — the node's top list and the full φ* vector, aligned with focus/particles-<sha>.json.
 """
 import csv
@@ -29,7 +31,10 @@ import threading
 import time
 
 SCALE_BITS = 60
-SERIES = 24            # epochs kept in the site's per-particle series shards
+SERIES = 24            # epochs kept in the site's per-particle series shards (and in moved.json)
+MOVED_TOP = 12         # risers and fallers per epoch in moved.json
+GRAPH_NODES = 400      # graph.json: the top particles by φ*, plus the endpoints of staked axons
+GRAPH_EDGES = 2400     # at most this many axons drawn (a phone stays smooth)
 TOP_AXONS = 1000
 TOP_NEURONS = 1000
 CHART_TOP = 200
@@ -205,14 +210,14 @@ class FocusIndex:
                 self.save_record(e, top, ps, vals)
                 phi, head = self.load_record(e)
                 self.log(f'epoch {e}: φ* of {len(ps)} particles recorded in {time.time() - t0:.0f} s')
-            self.build(e, boundary, eco, phi, head, cards)
+            self.build(e, boundary, eco, phi, head, cards, L)
             self.done = e
             self.log(f'epoch {e}: tables written in {time.time() - t0:.0f} s')
         except Exception as ex:      # the indexer's main loop must not die with this thread
             self.log(f'epoch {e}: {type(ex).__name__}: {ex}')
 
     # ------------------------------------------------------------------ the tables
-    def build(self, e, boundary, eco, phi, head, cards):
+    def build(self, e, boundary, eco, phi, head, cards, L=240):
         gen, ix = self.gen, self.ix
         S = 1 << SCALE_BITS
         # sides per axon at the boundary, and the stakers' contributions
@@ -330,17 +335,26 @@ class FocusIndex:
         ix.write('neurons.json', {**common, 'note': 'f = focus authored as a share of all focus; gb = native balance in the genesis file; g = its weight per frame '
                                   '(§4.1); links = genesis frames + cyberlinks signed on chain; sa/sp = active/passive stake now; earned = Σ payouts owned',
                                   'neurons': len(nrows), 'rows': nrows[:TOP_NEURONS]})
-        self.particles_file(e, phi, now_p, now_m, common)
+        epochs, series, complete = self.particles_file(e, phi, now_p, now_m, common, head)
+        for name, fn in (('moved.json', lambda: self.moved(e, L, epochs, series, complete, common)),
+                         ('graph.json', lambda: self.graph(flows, phi, now_p, now_m, common))):
+            try:
+                fn()
+            except Exception as ex:      # a side view: its failure leaves the other tables written
+                self.log(f'epoch {e}: {name}: {type(ex).__name__}: {ex}')
 
-    def particles_file(self, e, phi, now_p, now_m, common):
+    def particles_file(self, e, phi, now_p, now_m, common, head=None):
         """particles.json (top 1,000 with Δφ*, and the chart set) and the per-particle series shards phi/<xx>.json."""
         gen, ix = self.gen, self.ix
         epochs = sorted(int(n[:-5]) for n in os.listdir(self.rec) if n.endswith('.json') and n[:-5].isdigit())
         epochs = [x for x in epochs if x <= e][-SERIES:]
-        series = {}
+        series, complete = {}, {}
         for x in epochs:
-            v = phi if x == e else self.load_record(x)[0] or {}
-            series[x] = v
+            if x == e:
+                series[x], complete[x] = phi, bool((head or {}).get('complete'))
+            else:
+                v, h = self.load_record(x)
+                series[x], complete[x] = v or {}, bool((h or {}).get('complete'))
         prev = series.get(epochs[-2]) if len(epochs) > 1 else None
         prev_e = epochs[-2] if len(epochs) > 1 else None
         order = sorted(phi, key=lambda p: (-phi[p], p))
@@ -370,3 +384,108 @@ class FocusIndex:
         for i in range(256):
             k = f'{i:02x}'
             ix.write(os.path.join('phi', f'{k}.json'), {'epoch': e, 'epochs': epochs, 'scale_bits': SCALE_BITS, 'p': shards.get(k, {})})
+        return epochs, series, complete
+
+    # ------------------------------------------------------------------ who moved focus
+    def moved(self, e, L, epochs, series, complete, common):
+        """per recorded epoch x whose epoch before is recorded too: Δφ* per particle, the epoch's cyberlinks and stake changes that
+        touch the particles that moved most, and the positions its settlement paid. φ*_x is the solve over the graph at boundary x, so
+        what moved it happened in blocks (x−1)·L+1 .. x·L."""
+        from earnings import payout_keys
+        ix = self.ix
+        cid = self.gen.cid if self.gen else {}
+        keys = payout_keys(ix)
+        links = list(ix.links)
+        stx = list(ix.stx)
+        pix, plist = {}, []
+
+        def P(x):
+            if x not in pix:
+                pix[x] = len(plist)
+                plist.append([x, cid.get(x)])
+            return pix[x]
+        out = []
+        for x in sorted(epochs, reverse=True):
+            if x - 1 not in series:
+                continue
+            cur, prev = series[x], series[x - 1]
+            whole = complete.get(x) and complete.get(x - 1)
+            ids = (set(cur) | set(prev)) if whole else (set(cur) & set(prev))
+            d = {p: cur.get(p, 0) - prev.get(p, 0) for p in ids}
+            tv = sum(abs(v) for v in d.values()) // 2
+            moved_n = sum(1 for v in d.values() if v)
+            up = sorted((p for p in d if d[p] > 0), key=lambda p: (-d[p], p))[:MOVED_TOP]
+            down = sorted((p for p in d if d[p] < 0), key=lambda p: (d[p], p))[:MOVED_TOP]
+            lo, hi = (x - 1) * L + 1, x * L
+            w_links = [(h, l) for h, l in links if lo <= h <= hi]
+            w_stx = [(h, s) for h, s in stx if lo <= h <= hi]
+            watch = set(up) | set(down)
+            txs = []
+            for h, s in w_stx:
+                txs.append([h, s['txid'], 'lock' if s['kind'] == 'cyberlink' else s['kind'], s['from'], P(s['p']), P(s['q']), str(s.get('amount', 0)), s.get('valence'),
+                            int(s['p'] in watch or s['q'] in watch)])
+            staked = {s['txid'] for _, s in w_stx}
+            for h, l in w_links:
+                if l['txid'] in staked:
+                    continue
+                txs.append([h, l['txid'], 'cyberlink', l['from'], P(l['p']), P(l['q']), '0', None, int(l['p'] in watch or l['q'] in watch)])
+            txs.sort(key=lambda r: (-r[8], r[0]))
+            rec = dict(ix.epochs).get(x) or {}
+            paid = []
+            for pay in rec.get('payouts') or ():
+                n, pp, qq = keys.get(pay['card'], (None, None, None))
+                paid.append([pay['card'], n, pay['owner'], P(pp) if pp else None, P(qq) if qq else None, str(pay['amount'])])
+            row = lambda p: [P(p), str(prev.get(p)) if p in prev else None, str(cur.get(p)) if p in cur else None, str(d[p])]
+            out.append({'epoch': x, 'prev': x - 1, 'whole': bool(whole), 'compared': len(ids), 'moved': moved_n, 'tv': str(tv),
+                        'from': lo, 'to': hi, 'cyberlinks': len(w_links), 'stake_txs': len(w_stx),
+                        'locked': str(sum(s['amount'] for _, s in w_stx if s['kind'] == 'cyberlink')), 'unlocked': str(sum(s['amount'] for _, s in w_stx if s['kind'] == 'unlock')),
+                        'settled_at': rec.get('settled_at'), 'budget': str(rec.get('budget', 0)) if rec else None, 'paid_total': str(rec.get('paid', 0)) if rec else None,
+                        'delta_syntropy': str(rec.get('delta_syntropy')) if rec else None,
+                        'up': [row(p) for p in up], 'down': [row(p) for p in down], 'txs': txs[:120], 'txs_total': len(txs), 'paid': paid})
+        ix.write('moved.json', {**common, 'note': 'per epoch x (newest first) with φ* recorded at x and x−1: tv = ½ Σ|Δφ*| (raw, 2^60 = all focus), the focus that '
+                                'changed place; up/down: [particle, φ* at x−1, φ* at x, Δ] (raw); txs: the epoch\'s staking txs and cyberlinks [height, txid, kind, '
+                                'neuron, p, q, amount, valence, touches a listed particle]; paid: the positions its settlement paid [card, author, owner, p, q, amount]. '
+                                'whole = both records hold every particle; otherwise only the particles in both are compared. a cyberlink without stake has '
+                                'weight 0 in φ* unless genesis frames carry its axon (chain-economy §4.2).',
+                                'particles': plist, 'epochs': out})
+
+    # ------------------------------------------------------------------ the graph view
+    def graph(self, flows, phi, now_p, now_m, common):
+        """the top particles by φ*, the endpoints of every axon with stake now, and the axons among them (staked first, then by flow)."""
+        cid = self.gen.cid if self.gen else {}
+        S = float(1 << SCALE_BITS)
+        top = sorted(phi, key=lambda p: (-phi[p], p))[:GRAPH_NODES]
+        nodes = list(top)
+        have = set(nodes)
+        staked = set(now_p) | set(now_m)
+        for p, q in sorted(staked, key=lambda k: -(now_p.get(k, 0) + now_m.get(k, 0))):
+            for x in (p, q):
+                if x not in have and len(nodes) < GRAPH_NODES + 100:
+                    have.add(x)
+                    nodes.append(x)
+        ix_of = {p: i for i, p in enumerate(nodes)}
+        in_for, in_ag = {}, {}
+        for (p, q), s in now_p.items():
+            in_for[q] = in_for.get(q, 0) + s
+        for (p, q), s in now_m.items():
+            in_ag[q] = in_ag.get(q, 0) + s
+        edges, seen = [], set()
+        for k in sorted(staked, key=lambda k: -(now_p.get(k, 0) + now_m.get(k, 0))):
+            if k[0] in ix_of and k[1] in ix_of:
+                seen.add(k)
+                edges.append([ix_of[k[0]], ix_of[k[1]], 0.0, str(now_p.get(k, 0)), str(now_m.get(k, 0))])
+        flow_of = {(p, q): fl for fl, p, q, a in flows}
+        for e_ in edges:
+            e_[2] = float(f'{flow_of.get((nodes[e_[0]], nodes[e_[1]]), 0) / S:.4g}')
+        for fl, p, q, a in flows:                           # flows is sorted by flow, descending
+            if len(edges) >= GRAPH_EDGES:
+                break
+            if (p, q) in seen or p not in ix_of or q not in ix_of or p == q:
+                continue
+            seen.add((p, q))
+            edges.append([ix_of[p], ix_of[q], float(f'{fl / S:.4g}'), '0', '0'])
+        rows = [[p, float(f'{phi.get(p, 0) / S:.4g}'), cid.get(p), str(in_for.get(p, 0)), str(in_ag.get(p, 0))] for p in nodes]
+        self.ix.write('graph.json', {**common, 'note': 'nodes: [particle, share of focus φ*, legacy CID, stake for on its in-axons now, stake against on its in-axons now]: '
+                                     f'the top {GRAPH_NODES} by φ* and the endpoints of axons with stake now; edges: [i, j, focus flow along it (share of all focus), '
+                                     f'stake for now, stake against now], every staked axon among the nodes first, then the present axons by flow, at most {GRAPH_EDGES}.',
+                                     'particles': len(phi), 'nodes': rows, 'edges': edges})
