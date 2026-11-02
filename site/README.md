@@ -9,6 +9,8 @@ flat navigation: every arrow, key, wheel and swipe on either axis moves one stat
 - the balance checker is the snapshot app's logic (`../snapshot/app/index.html`): name · address (a bostrom1 address is converted to its pussy twin) · mnemonic · private key · ledger, derived locally; data and `vendor.js` are read same-origin from the snapshot's files
 - `music/portal.mp3` — the portal ambient of the old space-pussy app (`ts/src/sounds/portalAmbient112.mp3`); on by default, starts on the first gesture
 
+- `explorer/` — the block explorer at `/explorer/`: `index.html` · `explorer.js` · `explorer.css`, static, no build. hash routes (`#/`, `#/blocks`, `#/block/<id|height>`, `#/tx/<id>`, `#/neuron/<id>`, `#/particle/<id>`, `#/card/<id>`, `#/epochs`, `#/epoch/<n>`, `#/focus`); data from the node's read API (cybernode `rs/src/node/chain_routes.rs`) at `/explorer/api/<path>` on the same origin, or `?api=<base>` for another node. `explorer/nginx-explorer.conf` is the vhost part: the page, the proxy to the node (`127.0.0.1:7783` = pussy-rc; `7781` = pussy at genesis), GET only, an allowlist of read paths, short timeouts, `limit_req` (its zone goes in `http{}`, see the file's head), `no-store` for moving reads, 10 s for blocks and transactions
+
 ## deploy
 
 deimos (`cyber@195.201.105.229:8333`), `/archive/snapshot-pussy/site/`; nginx maps the datasets and `vendor.js` onto
@@ -20,3 +22,17 @@ rsync -az -e "ssh -p 8333" site/ cyber@195.201.105.229:/archive/snapshot-pussy/s
 ```
 
 checks: `python3 ~/cyber/cyber/scripts/cdp.py https://spacepussy.ai/ --eval '…'` (no node).
+
+### the explorer
+
+the deck moved with the burial sites to the edge (apparatus `audit/hetzner/retire-2026-10-27.md`: `/var/www/burial/`, vhost `burial.conf`); `<root>` below is the `root` of the `server_name spacepussy.ai` block there.
+
+```sh
+rsync -az --exclude nginx-explorer.conf site/explorer/ <edge>:<root>/explorer/
+scp site/explorer/nginx-explorer.conf <edge>:/etc/nginx/snippets/nginx-explorer.conf
+# once, in http{}:  limit_req_zone $binary_remote_addr zone=pussy_explorer:10m rate=10r/s;
+# in the spacepussy.ai 443 server block:  include /etc/nginx/snippets/nginx-explorer.conf;
+ssh <edge> 'nginx -t && nginx -s reload'
+```
+
+checks: `curl -s https://spacepussy.ai/explorer/api/tip` answers JSON; `/explorer/api/template` and `POST /explorer/api/tx/…` answer 404/403; the page: `python3 ~/cyber/cyber/scripts/cdp.py 'https://spacepussy.ai/explorer/#/' --shot /tmp/x.png`.
