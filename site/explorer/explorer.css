@@ -95,6 +95,8 @@ td a:hover{color:var(--pink);border-color:var(--pink)}
 .kind.coinbase{border-color:var(--c3);color:var(--c3)}
 .kind.transfer{border-color:var(--c5);color:var(--c5)}
 .kind.payout,.kind.claim{border-color:var(--c4);color:var(--c4)}
+.kind.mean{border-color:var(--c4);color:var(--c4)}
+.kind.exact{border-color:var(--c5);color:var(--c5)}
 .pos{color:var(--c4)}.neg{color:var(--c1)}
 
 /* the cyberlink */
