@@ -16,6 +16,14 @@ tip and truncates the tail), and every --publish seconds writes three static fil
   summary.json  tip, chainwork, recent hashrate and block time, totals, top miners
   earnings.json the emission ledger per epoch and the miners of the last hour, day and all blocks (earnings.py)
   payouts.json  every payout as a receipt, the links and particles paid most, stakers and positions with their yield (earnings.py)
+  tickets.json  settlement mining (tru specs/rewards.md §7): the game each epoch's blocks sample (players N, window W, axons),
+                the lottery of every settled epoch (k per player, mean against exact, the rule that paid, the rescale, dust)
+
+the chain's work is a ticket once the node runs cybernode feat/ticket-pow: the header is 200 bytes and its last 32 are
+`sample`, the commitment of the block's Shapley sample; the work of a block, 2^256 / (target + 1), is then the expected
+attempts (tickets) per block and Σ work ÷ Δt is tickets per second. the indexer reads `sample` from the block's `hex`
+when the header is 200 bytes and leaves it out on the 168-byte header the alpha runs until it redeploys, so every file
+keeps its old fields and gains `work`: 'tickets' or 'hashes'.
 
 every --network-every seconds (network.py): network.json — the nodes the node sees on the wire and the ones the chain
 announces, placed by DB-IP Lite (--geo), named by --nodes.
@@ -53,6 +61,10 @@ ROLL = 12                   # blocks in the rolling hashrate estimate behind a b
 REORG_MAX = 5000            # deeper than this, rebuild from genesis
 VERSION = 1
 BLOCKS_FORMAT = 2           # 2: blocks.jsonl lines carry every cyberlink ('lk' for amount 0); an older file is re-walked
+TICKET_HEADER_HEX = 400     # a 200-byte header (cybernode feat/ticket-pow): bytes 168..200 are `sample`
+SAMPLE_HEX = 336            # offset of `sample` in the header's hex
+RECORD_HEX = 436            # a 218-byte epoch record: the lottery's four fields after `payouts` (chain-economy §5.6 amended)
+LOTTERY_RETRY = 3           # the newest settled epochs whose lottery is asked again when the node did not hold it
 
 
 def log(*a):
@@ -114,6 +126,36 @@ def plain_link(t):
     return None
 
 
+def record_tail(rec):
+    """the lottery's four fields of a 218-byte epoch record (cybernode chain/economy/settle.rs `Record::encode`):
+    players u32, samples u32, by_mean u32, value i64 (v(N) at 2^60), little-endian after the 198 old bytes."""
+    h = rec.get('record') or ''
+    if len(h) != RECORD_HEX:
+        return None
+    b = bytes.fromhex(h[396:])
+    return {'players': int.from_bytes(b[0:4], 'little'), 'samples': int.from_bytes(b[4:8], 'little'),
+            'by_mean': int.from_bytes(b[8:12], 'little'), 'value': str(int.from_bytes(b[12:20], 'little', signed=True))}
+
+
+def lottery_summary(lot):
+    """what one epoch's lottery says, from GET /epoch/{E}/lottery (rewards.md §7 'the payout'): per player a(c) is the mean
+    when k ≥ K_MIN, else the exact gradient; a⁺ = max(0, a); the shares paid are a⁺ rescaled to v(N) and floored; the
+    dust v(N) − Σ paid stays in the pool."""
+    est = lot.get('estimates') or []
+    value = int(lot.get('value') or 0)
+    a_plus = sum(max(0, int(e['a'])) for e in est)
+    paid = sum(int(e['paid']) for e in est)
+    paid_n = sum(1 for e in est if int(e['paid']) > 0)
+    k_min = int(lot.get('k_min') or 64)
+    by_mean = sum(1 for e in est if int(e['k']) >= k_min)
+    rescaled = a_plus > 0 and value > 0
+    return {'epoch': int(lot['epoch']), 'settled_at': lot.get('settled_at'), 'beacon': lot.get('beacon'), 'window_end': lot.get('window_end'),
+            'players': int(lot.get('players') or 0), 'samples': int(lot.get('samples') or 0), 'k_min': k_min,
+            'by_mean': by_mean, 'by_exact': len(est) - by_mean, 'value': str(value), 'a_plus': str(a_plus), 'paid': str(paid), 'paid_players': paid_n,
+            'rescaled': rescaled, 'dust': str(value - paid) if rescaled else None,
+            'k_min_of': min((int(e['k']) for e in est), default=None), 'k_max_of': max((int(e['k']) for e in est), default=None)}
+
+
 def sig(x, n=4):
     """a float rounded to n significant digits, for compact JSON."""
     if x is None or not math.isfinite(x):
@@ -130,6 +172,8 @@ class Index:
         os.makedirs(site, exist_ok=True)
         self.path = os.path.join(data, 'blocks.jsonl')
         self.cards_path = os.path.join(data, 'cards.json')
+        self.games_path = os.path.join(data, 'games.json')
+        self.lotteries_path = os.path.join(data, 'lotteries.json')
         self.t = array('q')         # block time, by height
         self.bits = array('L')      # compact target, by height
         self.txs = array('l')       # signals incl. coinbase
@@ -138,6 +182,9 @@ class Index:
         self.miner = array('l')     # index into self.miners, -1 = none
         self.off = array('q')       # byte offset of each line in blocks.jsonl
         self.ids = bytearray()      # 32 bytes per height
+        self.sample = []            # the header's `sample` (hex) by height; None on a 168-byte header
+        self.games = {}             # epoch -> the game its window samples (/game/<beacon> without the base), kept in games.json
+        self.lotteries = {}         # epoch -> GET /epoch/<E>/lottery, None when the node held none
         self.miners, self.miner_ix = [], {}
         self.stx = []               # (height, staking signal dict), in chain order
         self.links = []             # (height, {txid, from, p, q}) of every cyberlink on chain, staked or not
@@ -156,6 +203,12 @@ class Index:
                 self.card_ids = json.load(open(self.cards_path))
             except ValueError:
                 self.card_ids = {}
+        for path, attr in ((self.games_path, 'games'), (self.lotteries_path, 'lotteries')):
+            if os.path.exists(path):
+                try:
+                    setattr(self, attr, {int(k): v for k, v in json.load(open(path)).items()})
+                except ValueError:
+                    pass
         meta = os.path.join(self.data, 'blocks.format')
         fmt = open(meta).read().strip() if os.path.exists(meta) else ''
         if fmt != str(BLOCKS_FORMAT):
@@ -201,6 +254,7 @@ class Index:
             self.miner.append(-1)
         self.off.append(pos)
         self.ids += bytes.fromhex(b['id'])
+        self.sample.append(b.get('sample'))
         for s in b.get('stx') or ():
             self.stx.append((b['h'], s))
             if s['kind'] == 'cyberlink':
@@ -230,6 +284,7 @@ class Index:
         for a in (self.t, self.bits, self.txs, self.size, self.fees, self.miner, self.off):
             del a[n:]
         del self.ids[n * 32:]
+        del self.sample[n:]
         self.stx = [(h, s) for h, s in self.stx if h < n]
         self.links = [(h, l) for h, l in self.links if h < n]
         with open(self.path, 'r+b') as f:
@@ -266,6 +321,9 @@ class Index:
                     lk.append(pl)
         rec = {'h': b['height'], 'id': b['id'], 'prev': b['prev'], 't': b['time'], 'bits': b['bits'],
                'work': work_of(b['bits']), 'txs': b['txs'], 'size': b['size'], 'miner': b.get('miner'), 'fees': b.get('fees', 0)}
+        hx = b.get('hex') or ''
+        if len(hx) == TICKET_HEADER_HEX:
+            rec['sample'] = hx[SAMPLE_HEX:]
         if stx:
             rec['stx'] = stx
         if lk:
@@ -317,12 +375,62 @@ class Index:
             if not eps:
                 break
             for e in eps:
+                tail = record_tail(e)
                 e.pop('record', None)
+                if tail:
+                    e.update(tail)
                 self.epochs[int(e['epoch'])] = e
             after = int(eps[-1]['epoch'])
         for e in [e for e in self.epochs if e > last]:
             del self.epochs[e]
+            self.lotteries.pop(e, None)
+        if self.ticket_chain():
+            self.refresh_lotteries(last)
+            self.refresh_game(eco)
         return eco
+
+    def ticket_chain(self):
+        """the chain mines by tickets: the tip's header carries a sample."""
+        return bool(self.sample) and self.sample[-1] is not None
+
+    def refresh_lotteries(self, last):
+        """GET /epoch/<E>/lottery of every settled epoch once, newest first (the node holds only the estimates of its last
+        settlements), kept in lotteries.json; the newest few are asked again when the node held none."""
+        new = 0
+        for e in sorted(self.epochs, reverse=True):
+            if e in self.lotteries and (self.lotteries[e] is not None or e <= last - LOTTERY_RETRY):
+                continue
+            self.lotteries[e] = self.node.get(f'/epoch/{e}/lottery', missing_ok=True)
+            new += self.lotteries[e] is not None
+        if new:
+            tmp = f'{self.lotteries_path}.{os.getpid()}.tmp'
+            with open(tmp, 'w') as f:
+                json.dump({str(k): v for k, v in self.lotteries.items()}, f, separators=(',', ':'))
+            os.replace(tmp, self.lotteries_path)
+
+    def refresh_game(self, eco):
+        """the game the blocks of the tip's epoch sample (rewards.md §7: the blocks of epoch E + 1 sample the game of E),
+        read once per epoch from GET /game/<beacon>; the node serves the current and the previous game only."""
+        L = int(eco.get('epoch_length') or 240)
+        tip = len(self.t) - 1
+        e = (max(1, tip) - 1) // L + 1          # the epoch of the tip (chain-economy §2.1)
+        sampled = e - 1                         # the game its blocks sample
+        if sampled in self.games or sampled * L >= len(self.t):
+            return
+        beacon = self.id_at(sampled * L)
+        g = self.node.get(f'/game/{beacon}', missing_ok=True)
+        if not g:
+            return
+        n = len(g.get('players') or ())
+        w = int(g.get('w_ticket') or 0)
+        self.games[sampled] = {'epoch': sampled, 'beacon': beacon, 'cluster': g.get('cluster'), 'w_ticket': w, 'players': n,
+                               'axons': len(g.get('base') or ()), 'marginals': min(n, max(0, w - 1)), 'probes': w - min(n, max(0, w - 1)),
+                               'window_from': sampled * L + 1, 'window_to': (sampled + 1) * L, 'read_at': tip}
+        tmp = f'{self.games_path}.{os.getpid()}.tmp'
+        with open(tmp, 'w') as f:
+            json.dump({str(k): v for k, v in self.games.items()}, f)
+        os.replace(tmp, self.games_path)
+        log(f'game of epoch {sampled}: {n} players, W_TICKET {w}, {self.games[sampled]["axons"]} axons')
 
     # ------------------------------------------------------------------ outputs
     def replay(self):
@@ -439,10 +547,12 @@ class Index:
             raise
         except Exception as e:      # the earnings views are a side view: their failure never stops the index
             log(f'earnings: {type(e).__name__}: {e}')
-        hist = {'version': VERSION, 'chain': self.chain, 'generated': now, 'tip': tip, 'tip_time': self.t[tip], 'target': TARGET,
-                'note': 'per bin: h = last height, t = its time; hr = Σ work ÷ Δt (H/s) and bt = mean block time (s), both over the bin or the 12 blocks '
+        work = 'tickets' if self.ticket_chain() else 'hashes'
+        hist = {'version': VERSION, 'chain': self.chain, 'generated': now, 'tip': tip, 'tip_time': self.t[tip], 'target': TARGET, 'work': work,
+                'note': 'per bin: h = last height, t = its time; hr = Σ work ÷ Δt and bt = mean block time (s), both over the bin or the 12 blocks '
                         'ending at it when the bin is shorter; hr_lo/hr_hi = range of a 12-block rolling estimate, bt_lo/bt_hi = fastest/slowest block; '
-                        'd = expected hashes per block 2^256/(target+1); tx = signals, coinbase excluded; '
+                        'd = the work of a block, 2^256/(target+1): expected hashes per block when work = hashes, expected attempts (tickets) per block '
+                        'when work = tickets (rewards.md §7), so hr is H/s or tickets/s; tx = signals, coinbase excluded; '
                         'sa/st = active/total stake at the bin end (floats for plotting; exact values in stakes.json); fb = focus_bps in force for the bin\'s last '
                         'block, the share of the subsidy that goes to the focus pool, in basis points (chain-economy §6.1). genesis-to-block-1 is left out.',
                 'smooth': ROLL, 'ranges': {'all': self.bins(2, tip, points, bps_at), 'day': self.bins(self.since(86400), tip, points, bps_at),
@@ -479,7 +589,8 @@ class Index:
                 'locked_total': str(c['locked']), 'unlocked_total': str(c['unlocked']),
                 'earned': str(earned.get(card, 0)), 'paid_epochs': paid_n.get(card, 0), 'last_paid_epoch': last_paid.get(card), 'txs': c['txs'][-20:]})
         epochs = [{k: self.epochs[e].get(k) for k in ('epoch', 'boundary', 'settled_at', 'budget', 'paid', 'rewarded', 'focus_bps', 'pool_after',
-                                                       'particles', 'axons', 'delta_syntropy')} | {'payouts': len(self.epochs[e].get('payouts') or ())}
+                                                       'particles', 'axons', 'delta_syntropy', 'players', 'samples', 'by_mean', 'value')}
+                  | {'payouts': len(self.epochs[e].get('payouts') or ())}
                   for e in sorted(self.epochs, reverse=True)]
         for e in epochs:
             for k in ('budget', 'paid', 'pool_after', 'delta_syntropy'):
@@ -487,7 +598,7 @@ class Index:
                     e[k] = str(e[k])
         act = sum(int(p['stake']) for p in positions if p['open'] and int(p['valence']) != 0)
         tot = sum(int(p['stake']) for p in positions if p['open'])
-        stakes = {'version': VERSION, 'chain': self.chain, 'generated': now, 'tip': tip, 'min_lock': self.min_lock,
+        stakes = {'version': VERSION, 'chain': self.chain, 'generated': now, 'tip': tip, 'min_lock': self.min_lock, 'work': work,
                   'economy': {k: (str(v) if isinstance(v, int) and abs(v) > 2 ** 53 else v) for k, v in eco.items() if k != 'timings'},
                   'active_stake': str(act), 'total_stake': str(tot), 'positions_open': sum(1 for p in positions if p['open']),
                   'earned_total': str(sum(earned.values())), 'positions': positions, 'epochs': epochs,
@@ -510,7 +621,8 @@ class Index:
             if self.miner[i] >= 0:
                 counts[self.miner[i]] = counts.get(self.miner[i], 0) + 1
         top = sorted(counts.items(), key=lambda kv: -kv[1])[:10]
-        summary = {'version': VERSION, 'chain': self.chain, 'generated': now, 'height': tip, 'id': self.id_at(tip), 'time': self.t[tip],
+        summary = {'version': VERSION, 'chain': self.chain, 'generated': now, 'height': tip, 'id': self.id_at(tip), 'time': self.t[tip], 'work': work,
+                   'ticket': self.ticket_now(eco) if work == 'tickets' else None,
                    'chainwork': str(sum(work_of(b) for b in self.bits[1:])), 'difficulty': str(work_of(self.bits[tip])),
                    'hashrate_100': sig(hr100), 'hashrate_1000': sig(hr1k), 'block_time_100': sig(bt100), 'block_time_1000': sig(bt1k),
                    'signals_total': sum(self.txs) - (len(self.txs) - 1), 'staking_signals': len(self.stx),
@@ -520,6 +632,44 @@ class Index:
                    'miners_1000': [{'miner': self.miners[m], 'blocks': n} for m, n in top], 'blocks_file_bytes': os.path.getsize(self.path),
                    'earnings': self.earn.totals}
         self.write('summary.json', summary)
+        if work == 'tickets':
+            self.write_tickets(eco, now, hr100, hr1k)
+
+    def ticket_now(self, eco):
+        """the game the tip's epoch samples, and the tip's own sample."""
+        L = int(eco.get('epoch_length') or 240)
+        tip = len(self.t) - 1
+        e = (max(1, tip) - 1) // L + 1
+        g = self.games.get(e - 1)
+        return {'epoch': e, 'samples_game': e - 1, 'sample': self.sample[tip], 'game': g, 'window_from': (e - 1) * L + 1, 'window_to': e * L}
+
+    def write_tickets(self, eco, now, hr100, hr1k):
+        """tickets.json: settlement mining as the chain shows it (rewards.md §7) — the games sampled, the lotteries settled."""
+        tip = len(self.t) - 1
+        L = int(eco.get('epoch_length') or 240)
+        lots = [lottery_summary(self.lotteries[e]) for e in sorted(self.lotteries, reverse=True) if self.lotteries[e]]
+        first = next((h for h in range(len(self.sample)) if self.sample[h] is not None), None)
+        # the per-player estimate of every held epoch as lottery/<E>.json, written once: the node serves only its last
+        # settlements, the explorer's epoch page reads this file first and asks the node only for an epoch the index lacks
+        os.makedirs(os.path.join(self.site, 'lottery'), exist_ok=True)
+        for e, lot in self.lotteries.items():
+            if lot and not os.path.exists(os.path.join(self.site, 'lottery', f'{e}.json')):
+                self.write(os.path.join('lottery', f'{e}.json'), lot)
+        self.write('tickets.json', {
+            'version': VERSION, 'chain': self.chain, 'generated': now, 'tip': tip, 'tip_time': self.t[tip], 'epoch_length': L, 'target': TARGET,
+            'k_min': next((int(l['k_min']) for l in lots), 64), 'first_ticket_height': first,
+            'attempts_per_block': str(work_of(self.bits[tip])), 'bits': f'{self.bits[tip]:#010x}',
+            'tickets_per_s_100': sig(hr100), 'tickets_per_s_1000': sig(hr1k),
+            'now': self.ticket_now(eco), 'games': [self.games[e] for e in sorted(self.games, reverse=True)[:50]],
+            'lotteries': lots[:500], 'lotteries_held': sum(1 for e in self.lotteries if self.lotteries[e]), 'lotteries_missing': sorted(e for e in self.lotteries if not self.lotteries[e])[-20:],
+            'note': 'the work of a block is a settlement ticket: one Shapley sample of the game of the epoch before, W_TICKET entries '
+                    '(the marginals of a cyclic window of the ordering drawn from the template, the rest gradient probes), committed in the header '
+                    'as sample; the block id below the target is the ticket, the work and the subsidy (tru specs/rewards.md §7). attempts per block '
+                    '= 2^256 ÷ (target + 1); tickets/s = Σ attempts ÷ Δt over the last 100 and 1,000 blocks. games: per epoch the game its window '
+                    'samples, from GET /game/<beacon>: players N, W_TICKET, marginals = min(N, W − 1) and probes = W − marginals per ticket, the '
+                    'axons of the base. lotteries: per settled epoch from GET /epoch/E/lottery: samples = Σ k over the players, by_mean = players '
+                    'with k ≥ K_MIN paid by their mean, by_exact = the rest paid by the exact path gradient, value = v(N) at 2^60, a_plus = Σ max(0, a), '
+                    'paid = Σ of the rescaled shares, dust = v(N) − paid (the pool\'s), rescaled = whether a_plus > 0 and v(N) > 0.'})
 
     def write(self, name, obj):
         path = os.path.join(self.site, name)
