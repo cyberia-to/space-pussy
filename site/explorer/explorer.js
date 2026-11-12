@@ -3,7 +3,10 @@
    axons.json, neurons.json, particles.json, phi/<xx>.json; network.json for the network tab, drawn by network.js).
    the node answers at /explorer/api/<path> on the same origin; ?api=<base> points the page at another node.
    live: /tip once a second while the tab is visible, /status every few seconds and on every new block.
-   no build, no framework: one file, hash routes, big integers kept as strings or BigInt, never floats for amounts. */
+   no build, no framework: one file, hash routes, big integers kept as strings or BigInt, never floats for amounts.
+   the work: on a node with settlement mining (cybernode feat/ticket-pow, tru specs/rewards.md §7) the header is 200 bytes and its
+   last 32 are `sample`, the block's ticket; the page detects it from the genesis header's length (LIVE.work = 'tickets') and reads
+   tickets/s where it read H/s. until the alpha redeploys, its 168-byte headers keep every page as it was (LIVE.work = 'hashes'). */
 'use strict';
 
 const QS = new URLSearchParams(location.search);
@@ -23,6 +26,9 @@ const STATUS_EVERY = 4;     // ticks between /status reads when no block arrives
 const DATA_EVERY = 30000;   // ms between reads of the indexer's files
 const HEX64 = /^[0-9a-f]{64}$/;
 const SCALE = 1n << 60n;    // φ* fixed point (economy_api.rs: scale_bits 60)
+const TICKET_HEX = 400;     // a 200-byte header: `sample` is its last 32 bytes (hex 336..400)
+const RECORD_HEX = 436;     // a 218-byte epoch record: players, samples, by_mean, value after the 198 old bytes
+const REWARDS = 'https://github.com/cyberia-to/tru/blob/master/specs/rewards.md';
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -166,7 +172,45 @@ const LIVE = {
   eco: null,          // /economy
   summary: null,      // the indexer's summary.json
   arrived: 0,         // Date.now() when the last new block was seen
+  work: null,         // 'tickets' (200-byte headers carry a settlement sample) or 'hashes' (the 168-byte header of the alpha until it redeploys)
 };
+
+/* the work: a ticket or a hash. detected once, from the indexer's summary or the genesis header's length. */
+const isT = () => LIVE.work === 'tickets';
+const unit = () => (isT() ? 'tickets/s' : 'H/s');
+const attempts = () => (isT() ? 'attempts' : 'hashes');
+const sampleOf = (b) => (b && b.hex && b.hex.length === TICKET_HEX ? b.hex.slice(336) : null);
+// the lottery's four fields of a 218-byte epoch record (cybernode chain/economy/settle.rs): players u32, samples u32, by_mean u32, value i64 LE
+const recordTail = (e) => {
+  if (e.players !== undefined) return { players: Number(e.players), samples: Number(e.samples), by_mean: Number(e.by_mean), value: String(e.value) };
+  const h = e.record; if (!h || h.length !== RECORD_HEX) return null;
+  const u32 = (o) => parseInt(h.slice(o + 6, o + 8) + h.slice(o + 4, o + 6) + h.slice(o + 2, o + 4) + h.slice(o, o + 2), 16);
+  let v = 0n; for (let i = 7; i >= 0; i--) v = (v << 8n) | BigInt(parseInt(h.slice(420 + 2 * i, 422 + 2 * i), 16));
+  if (v >= 1n << 63n) v -= 1n << 64n;
+  return { players: u32(396), samples: u32(404), by_mean: u32(412), value: v.toString() };
+};
+async function detectWork() {
+  if (LIVE.work) return LIVE.work;
+  const s = LIVE.summary || await file('summary.json');
+  if (s && s.work) { LIVE.work = s.work; LIVE.summary = s; }
+  else { const h = await api('/header/0').catch(() => null); if (h) LIVE.work = sampleOf(h) ? 'tickets' : 'hashes'; }
+  if (LIVE.work) howLine();
+  return LIVE.work;
+}
+// the footer's one line on the work, once it is known
+function howLine() {
+  const p = $('#how p'); if (!p) return;
+  p.innerHTML = isT()
+    ? `how it works · the proof of work is a settlement ticket: every attempt at a block is one Shapley sample of the epoch's game, committed in the header; the block id below the target is the ticket, the work and the subsidy, verified by every node recomputing it (<a href="${REWARDS}#7-settlement-mining" target="_blank" rel="noopener">rewards §7</a>) · difficulty set every block by ASERT toward 30 s · epochs of 240 blocks · a cyberlink with amount &gt; 0 and valence ≠ 0 is a staking position; positions are paid at boundary + 120 blocks by the lottery's estimate of their share of the syntropy gain (<a href="https://github.com/cyberia-to/cybernode/blob/main/specs/chain-economy.md#5-settlement" target="_blank" rel="noopener">chain-economy §5–6</a>) · the network is an experiment in collective learning whose security grows.`
+    : `how it works · proof of work over hemera until the alpha redeploys; then the settlement ticket of <a href="${REWARDS}#7-settlement-mining" target="_blank" rel="noopener">rewards §7</a> is the work · difficulty set every block by ASERT toward 30 s · epochs of 240 blocks · a cyberlink with amount &gt; 0 and valence ≠ 0 is a staking position; positions are paid at boundary + 120 blocks by their share of the syntropy gain (<a href="https://github.com/cyberia-to/cybernode/blob/main/specs/chain-economy.md#5-settlement" target="_blank" rel="noopener">chain-economy §5–6</a>) · the network is an experiment in collective learning whose security grows.`;
+}
+// the short account of mining now, for the overview and the earnings pages
+function miningNote(where) {
+  if (!isT()) return `<p class="lede">ticket mining starts at the alpha's redeploy: this node still grinds hemera over the header, so the work shown here is hashes. after the redeploy every attempt at a block is one Shapley sample of the epoch's game and the pages read tickets (<a href="${REWARDS}#7-settlement-mining" target="_blank" rel="noopener">rewards §7</a>).</p>`;
+  const t = LIVE.summary && LIVE.summary.ticket; const g = t && t.game;
+  const W = g ? grp(g.w_ticket) : 'W_TICKET';
+  return `<p class="lede">how mining works now: there is no hash puzzle. every attempt at a block is one Shapley sample of the game of the epoch before — the marginal Δφ⁺ of ${g && g.players ? `each of ${grp(Math.min(g.players, g.w_ticket - 1))} links in a window of the ordering the template draws` : 'the links that changed, and gradient probes of the graph where none did'}, ${W} entries, one cold solve of the consensus engine each — committed in the header as the sample; a block id below the target makes that sample the block's work and its subsidy (<a href="${REWARDS}#7-settlement-mining" target="_blank" rel="noopener">rewards §7</a>). every node recomputes the ticket before it accepts the block, hash first, at most V_BUDGET such recomputations per interval at the tip (6 on pussy), so a forged header costs a node one bounded check and never a block. the settlement reads the window's samples: a link sampled K_MIN = 64 times or more is paid its mean, below that its exact gradient. the floor of the difficulty (2^252, 16 attempts a block) means a slow network never stalls, only slows: a lone slow core sits at minutes per block with nothing left for ASERT to do; one current laptop or about five server cores hold the 30 s (§7).${where === 'earnings' ? ' miners are paid per ticket won: the subsidy minus the pool\'s cut, plus the block\'s fees.' : ''}</p>`;
+}
 
 async function status(fresh) {
   if (!fresh && LIVE.st && Date.now() - LIVE.stAt < 5000) return LIVE.st;
@@ -175,6 +219,7 @@ async function status(fresh) {
   LIVE.st = r.data; LIVE.stAt = Date.now();
   DENOM = LIVE.st.chain || DENOM; $('#denom-foot').textContent = DENOM || 'its denom';
   netLine();
+  if (!LIVE.work) await detectWork().catch(() => null);
   return LIVE.st;
 }
 function netLine() {
@@ -186,14 +231,17 @@ function netLine() {
 }
 async function economy() { if (!LIVE.eco) LIVE.eco = await api('/economy').catch(() => null); return LIVE.eco || {}; }
 
-// the chain's hashrate now: the indexer's Σ work ÷ Δt over 100 blocks, else the current difficulty over the recent blocks' span
+// the chain's work rate now — H/s, or tickets/s where the work is a settlement sample: the indexer's Σ work ÷ Δt over 100 blocks,
+// else the current work per block over the recent blocks' span. the work of a block is 2^256 ÷ (target + 1) either way: expected
+// hashes, or expected attempts (tickets) per block.
 function hashrate() {
-  const s = LIVE.summary;
-  if (s && s.hashrate_100 && LIVE.tip && LIVE.tip.height - s.height < 200) return { rate: Number(s.hashrate_100), how: 'Σ work ÷ Δt over 100 blocks (indexer)' };
+  const s = LIVE.summary; const w = isT() ? 'Σ attempts per block' : 'Σ work';
+  // the index must be of this chain and near the tip: an index of an earlier chain (a redeploy from a new genesis) says nothing here
+  if (s && s.hashrate_100 && LIVE.tip && s.height <= LIVE.tip.height && LIVE.tip.height - s.height < 200 && (!LIVE.st || !s.chain || s.chain === LIVE.st.chain)) return { rate: Number(s.hashrate_100), how: `${w} ÷ Δt over 100 blocks (indexer)` };
   const b = LIVE.recent; const st = LIVE.st;
   if (b.length > 2 && st && b[b.length - 1].time > b[0].time) {
     const span = b.length - 1;
-    return { rate: (Number(work(st.bits)) * span) / (b[b.length - 1].time - b[0].time), how: `current difficulty × ${span} blocks ÷ their span` };
+    return { rate: (Number(work(st.bits)) * span) / (b[b.length - 1].time - b[0].time), how: `${isT() ? 'attempts per block' : 'current difficulty'} × ${span} blocks ÷ their span` };
   }
   return { rate: NaN, how: 'needs two blocks' };
 }
@@ -265,13 +313,17 @@ const epochOf = (h, L) => Math.floor((Math.max(1, h) - 1) / L) + 1;
 /* ------------------------------------------------------------------ overview */
 const BLOCK_HEAD = ['height', 'block', 'age', '>signals', '>size~', 'miner~'];
 const blockRow = (b, cls) => tds([`<a href="#/block/${b.height}">${grp(b.height)}</a>`, ref('block', b.id), ago(b.time), grp(b.txs), `${grp(b.size)}${SEP}B`, ref('neuron', b.miner)], BLOCK_HEAD, cls);
-const EPOCH_HEAD = ['epoch', '>boundary', '>settled at', '>budget', '>paid', '>rewarded~', '>Δ syntropy~'];
-const epochRow = (e) => tds([`<a href="#/epoch/${e.epoch}">${grp(e.epoch)}</a>`, hlink(e.boundary), hlink(e.settled_at), grp(e.budget), grp(e.paid), grp(e.rewarded), grp(e.delta_syntropy)], EPOCH_HEAD);
+const epochHead = () => ['epoch', '>boundary', '>settled at', '>budget', '>paid', '>rewarded~', '>Δ syntropy~', ...(isT() ? ['>players~', '>samples~'] : [])];
+const epochRow = (e) => {
+  const t = isT() ? recordTail(e) : null;
+  return tds([`<a href="#/epoch/${e.epoch}">${grp(e.epoch)}</a>`, hlink(e.boundary), hlink(e.settled_at), grp(e.budget), grp(e.paid), grp(e.rewarded), grp(e.delta_syntropy),
+    ...(isT() ? [t ? grp(t.players) : '—', t ? grp(t.samples) : '—'] : [])], epochHead());
+};
 
 function liveStrip() {
   return `<section class="live" aria-label="the chain now">
     <div class="lv lv-h"><span class="lab">height</span><b id="lv-height">—</b><small>last block <span id="lv-ago">—</span> · <span id="lv-tip"></span></small></div>
-    <div class="lv lv-hash"><div class="row"><span class="lab">hashing block <b id="lv-next">—</b></span><span class="lab" id="lv-p">—</span></div>
+    <div class="lv lv-hash"><div class="row"><span class="lab">${isT() ? 'sampling' : 'hashing'} block <b id="lv-next">—</b></span><span class="lab" id="lv-p">—</span></div>
       <div class="meter hot" id="lv-meter"><i></i><em title="the expected time: P = 63 %"></em></div>
       <small id="lv-hash-note">—</small></div>
     <div class="lv lv-epoch"><div class="row"><span class="lab">epoch <b id="lv-epoch">—</b></span><span class="lab" id="lv-epoch-left">—</span></div>
@@ -296,7 +348,9 @@ function hashMeter() {
   $('#lv-p').textContent = `P ${(P * 100).toFixed(1)}${SEP}%`;
   el.querySelector('i').style.width = `${(P * 100).toFixed(2)}%`;
   el.querySelector('em').style.left = `${(1 - Math.exp(-1)) * 100}%`;
-  $('#lv-hash-note').innerHTML = `expected ${si(need)} hashes for this block · ≈ ${si(rate * t)} hashed in ${dur(t)} at ≈ ${si(rate, 'H/s')} · P(a block by now) = 1 − e<sup>−t/T</sup>, T ≈ ${dur(T)}`;
+  $('#lv-hash-note').innerHTML = isT()
+    ? `expected ${si(need)} attempts for this block (2^256 ÷ target), each one Shapley sample · ≈ ${si(rate * t)} sampled in ${dur(t)} at ≈ ${si(rate, 'tickets/s')} · P(a block by now) = 1 − e<sup>−t/T</sup>, T ≈ ${dur(T)}`
+    : `expected ${si(need)} hashes for this block · ≈ ${si(rate * t)} hashed in ${dur(t)} at ≈ ${si(rate, 'H/s')} · P(a block by now) = 1 − e<sup>−t/T</sup>, T ≈ ${dur(T)}`;
 }
 async function liveTiles() {
   if (!$('#lv-mem') || !LIVE.st) return;
@@ -348,6 +402,7 @@ async function overview() {
   <p class="sub">genesis block ${ref('block', st['genesis-block'])} · moniker ${esc(st.moniker)} · state root ${short(st['bbg-root'])}${cp(st['bbg-root'] || '')}</p>
   ${liveStrip()}
   <h2>now</h2><div class="tiles" id="ov-tiles">${overviewTiles(stk)}</div>
+  ${miningNote('overview')}
   <div class="cols"><div><h2>latest blocks</h2>${table(BLOCK_HEAD, latest.map((b) => blockRow(b)), 'no blocks served', 'ov-blocks')}<div class="pager"><a href="#/history">history of the chain →</a><a class="end" href="#/blocks">all blocks →</a></div></div>
   <div><h2>latest epochs</h2>${table(['epoch', '>boundary', '>settled at', '>paid'], epochs.map((e) => tds([`<a href="#/epoch/${e.epoch}">${grp(e.epoch)}</a>`, grp(e.boundary), grp(e.settled_at), grp(e.paid)], ['', '>', '>', '>'])), 'no epoch settled yet')}
   <p class="note">an epoch is ${grp(eco.epoch_length || 240)} blocks; it settles ${grp(eco.settle_delay || 120)} blocks after its boundary.</p>
@@ -366,8 +421,10 @@ function overviewTiles(stk) {
   const positions = stk ? `${grp(stk.positions_open)} open position${stk.positions_open === 1 ? '' : 's'} · ` : '';
   return [
     tile('block time', isFinite(med) ? `${med}<span class="u">s</span>` : '—', `median over the last ${grp(gaps.length)} blocks · target ${TARGET}${SEP}s`),
-    tile('hashrate<span class="est">estimate</span>', si(rate, 'H/s'), how),
-    tile('difficulty', si(Number(work(st.bits || '0x1e010000'))), `expected hashes per block · bits ${esc(st.bits)} → next ${esc(st['next-bits'] || '—')}`),
+    tile(`${isT() ? 'tickets/s' : 'hashrate'}<span class="est">estimate</span>`, si(rate, unit()), isT() ? `${how} · attempts per block ≈ 2^256/target` : how),
+    isT()
+      ? tile('attempts per block', si(Number(work(st.bits || '0x20100000'))), `≈ 2^256 ÷ target: expected tickets to find one block · bits ${esc(st.bits)} → next ${esc(st['next-bits'] || '—')}`)
+      : tile('difficulty', si(Number(work(st.bits || '0x1e010000'))), `expected hashes per block · bits ${esc(st.bits)} → next ${esc(st['next-bits'] || '—')}`),
     tile('supply', amtc(st.supply), `raw units · subsidy ${grp(st.subsidy)} per block`, 'wide'),
     tile('active stake', amtc(st['active-stake']), `${positions}total ${grp(st['total-stake'])} · <a href="#/staking">staking →</a>`, 'stake wide'),
     tile('to stakers', bps(st['focus-bps']), `of each block's subsidy: ${grp(cut.toString())} per block into the focus pool`),
@@ -422,7 +479,7 @@ async function block(idh) {
     return notFound(`block ${esc(idh)}`, r.data && r.data.error ? r.data.error : 'not yet: the page shows it the moment it is mined');
   }
   const b = r.data;
-  const txs = await Promise.all((b.txids || []).slice(0, 200).map((id) => api(`${SIGNAL_API}/${id}`).catch(() => null)));
+  const [txs, ticket] = await Promise.all([Promise.all((b.txids || []).slice(0, 200).map((id) => api(`${SIGNAL_API}/${id}`).catch(() => null))), ticketSection(b)]);
   const head = ['#', 'signal', 'kind', 'what', '>fee~'];
   const rows = (b.txids || []).slice(0, 200).map((id, i) => { const t = txs[i]; return tds([i, ref('signal', id), t ? kind(t.kind) : '—', t ? txLine(t) : '', t && t.tx.fee !== undefined ? grp(t.tx.fee) : '—'], head); });
   return `<p class="kick">block</p><h1>block <em>${grp(b.height)}</em></h1><p class="sub">${full(b.id)}</p>
@@ -430,10 +487,39 @@ async function block(idh) {
   <h2>header</h2>${kv([
     ['height', grp(b.height)], ['time', `${grp(b.time)} unix · ${ago(b.time)}`], ['miner', b.miner ? ref('neuron', b.miner) : 'none (genesis)'],
     ['signals', grp(b.txs)], ['fees', amt(b.fees)], ['size', `${grp(b.size)}${SEP}bytes`],
-    ['bits', `${esc(b.bits)} · ${si(Number(work(b.bits)))} expected hashes`], ['nonce', full(b.nonce)],
+    ['bits', `${esc(b.bits)} · ${si(Number(work(b.bits)))} expected ${sampleOf(b) ? 'attempts' : 'hashes'}`], ['nonce', full(b.nonce)],
     ['prev', b.height > 0 ? ref('block', b.prev) : 'none'], ['signal root', full(b.tx_root)], ['state root', full(b.state_root)], ['chain', full(b.chain)], ['version', grp(b.version)],
   ])}
+  ${ticket}
   <h2>signals</h2>${table(head, rows, 'no signals in this block')}`;
+}
+
+// the block's ticket (rewards.md §7): its sample, the game it samples, the window, the rank, how it was verified
+async function ticketSection(b) {
+  const sample = sampleOf(b);
+  if (!sample) {
+    return `<h2>ticket</h2><div class="empty">${isT() ? 'a 168-byte header: no sample, a block from before ticket mining' : 'no ticket in this header: this node grinds hemera until the alpha redeploys. ticket mining starts at the alpha\'s redeploy; then every block carries its settlement sample here'}.</div>`;
+  }
+  const [eco, tk] = await Promise.all([economy(), file('tickets.json')]);
+  const L = Number(eco.epoch_length || 240); const G = epochOf(b.height, L) - 1;
+  const games = (tk && tk.games) || [];
+  const g = games.find((x) => Number(x.epoch) === G) || null;
+  const latest = games[0] || null;                        // W_TICKET is the chain's; the latest game read carries it
+  const W = g ? Number(g.w_ticket) : latest ? Number(latest.w_ticket) : null; const N = g ? Number(g.players) : null; const m = g ? Math.min(N, W - 1) : null;
+  const rank = N === 0 ? '0: the game has no player, so every entry is a gradient probe of the graph'
+    : N ? `the 64 bits after the nonce in hemera(template), mod ${grp(N)}: the first rank of the cyclic window; the node does not serve the draw, every verifier derives it`
+      : 'the 64 bits after the nonce in hemera(template), mod N';
+  const rows = [
+    ['sample', `${full(sample)}`],
+    ['samples the game of', `<a href="#/epoch/${G}">epoch ${grp(G)}</a> · beacon ${g ? ref('block', g.beacon) : hlink(G * L)}${g ? ` · cluster ${short(g.cluster)}${cp(g.cluster)}` : ''}`],
+    ['players', g ? (N ? `${grp(N)} link${N === 1 ? '' : 's'} whose stake changed between the boundaries of epochs ${grp(G - 1)} and ${grp(G)}` : 'none: no stake changed in the epoch, the ticket probes the gradient the attribution reads') : 'the index reads each epoch\'s game once from the node (GET /game/beacon); not held for this one'],
+    ['window', g ? `W_TICKET = ${grp(W)} entries: ${grp(m)} marginal${m === 1 ? '' : 's'} Δφ⁺ of a cyclic window of the ordering drawn from the template, ${grp(W - m)} gradient probe${W - m === 1 ? '' : 's'} over the ${grp(g.axons)} axons of the base`
+      : W ? `W_TICKET = ${grp(W)} entries (the chain's, from the latest game read): min(N, W − 1) marginals of the ordering's window, the rest gradient probes` : 'W_TICKET entries: min(N, W − 1) marginals of the ordering\'s window, the rest gradient probes'],
+    ['rank', rank],
+    ['verified', `by recomputation: this node derived the ordering, the rank and the probes from the template's digest, ran the ${g ? grp(W + 1) : 'W + 1'} cold solves itself and matched this commitment before accepting the block; no proof is carried, the proof of a sample is the sample`],
+    ['work', `${si(Number(work(b.bits)))} expected attempts, 2^256 ÷ (target + 1) · the block id is below the target: this sample is the block's work and its subsidy`],
+  ];
+  return `<h2>ticket</h2>${kv(rows)}<p class="note">the header's last 32 bytes commit to the ticket's entries (hemera over D_SAMPLE ‖ W ‖ the marginals and probes); the first 168 are the template whose digest draws the nonce, the rank and the probes. the marginals themselves are not served by the node; the settlement reads them (<a href="${REWARDS}#7-settlement-mining" target="_blank" rel="noopener">rewards §7</a>).</p>`;
 }
 
 // a page that shows earnings renders again when a settlement lands
@@ -533,7 +619,7 @@ async function neuron(id) {
   const quiet = big(b.balance) === 0n && !Number(nonce && nonce.confirmed) && !cs.length;
   return `<p class="kick">neuron</p><h1>neuron <em>${short(id)}</em></h1><p class="sub">${full(id)}</p>
   ${quiet ? `<p class="note">this key holds nothing and has signed nothing on this chain. if it is a particle, see <a href="#/particle/${id}">its focus</a>.</p>` : ''}
-  <h2>balance</h2><div class="tiles">${tile('balance', amtc(b.balance), `at height ${grp(b.height)}`, 'hero')}${tile('spendable', amtc(b.spendable), locked > 0n ? `${grp(locked.toString())} held but not yet spendable (maturing coinbase)` : 'all of it spendable')}${tile('nonce', grp(nonce ? nonce.confirmed : '—'), `next to sign: ${grp(nonce ? nonce.nonce : '—')}`)}${tile('positions', grp(cs.length), cs.length ? `staked ${grp(cs.reduce((s, c) => s + big(c.stake), 0n).toString())} · earned ${grp(earnedAll.toString())}` : 'staked cyberlinks authored')}${mined ? tile('mined', amtc(mined.earned), `${pl(mined.blocks, 'block')} (${fpct(mined.share)} of all) from ${hlink(mined.first)} to ${hlink(mined.last)} · <a href="#/earnings/miners">top miners →</a>`) : ''}</div>
+  <h2>balance</h2><div class="tiles">${tile('balance', amtc(b.balance), `at height ${grp(b.height)}`, 'hero')}${tile('spendable', amtc(b.spendable), locked > 0n ? `${grp(locked.toString())} held but not yet spendable (maturing coinbase)` : 'all of it spendable')}${tile('nonce', grp(nonce ? nonce.confirmed : '—'), `next to sign: ${grp(nonce ? nonce.nonce : '—')}`)}${tile('positions', grp(cs.length), cs.length ? `staked ${grp(cs.reduce((s, c) => s + big(c.stake), 0n).toString())} · earned ${grp(earnedAll.toString())}` : 'staked cyberlinks authored')}${mined ? tile('mined', amtc(mined.earned), `${isT() ? `${grp(mined.blocks)} tickets won` : pl(mined.blocks, 'block')} (${fpct(mined.share)} of all) from ${hlink(mined.first)} to ${hlink(mined.last)} · <a href="#/earnings/miners">top miners →</a>`) : ''}</div>
   <p class="note">token ${short(b.token)}${cp(b.token || '')} · ${esc(b.denom || DENOM)} · supply ${grp(b.supply)}</p>
   <h2>staked positions</h2>${table(cHead, cRows, 'no positions: no staked cyberlink authored by this neuron')}
   <h2>payouts</h2>${table(pHead, pRows, `no payouts in the last ${grp(Math.min(last, 60))} settled epochs`)}`;
@@ -647,7 +733,7 @@ async function epochs() {
   viewLive = (fresh) => (LIVE.st['last-settled'] !== String(last) ? render(true) : null);
   return `<p class="kick">epochs · ${esc(st.chain)}</p><h1>epochs, <em>settled</em></h1>
   <p class="sub">now in epoch ${grp(st.epoch)} · next boundary ${grp(st['next-boundary'])} · last settled ${grp(last)}</p>
-  <h2>&nbsp;</h2>${table(EPOCH_HEAD, list.map(epochRow), 'no epoch settled yet: the first settles at height 360')}`;
+  <h2>&nbsp;</h2>${table(epochHead(), list.map(epochRow), 'no epoch settled yet: the first settles at height 360')}${isT() ? '<p class="note">players = the links whose stake changed in the epoch, the game its window sampled; samples = Σ k over the players, the marginals the window\'s tickets drew.</p>' : ''}`;
 }
 
 async function epoch(n) {
@@ -663,16 +749,52 @@ async function epoch(n) {
     return `<p class="kick">epoch</p><h1>epoch <em>${grp(n)}</em></h1>${crumbs}<h2>&nbsp;</h2><div class="empty">not settled ${settle > tip ? `yet: its boundary is height ${grp(n * L)}, it settles at ${grp(settle)}, ${grp(settle - tip)} blocks from the tip. this page fills in when it does.` : 'on this node'}</div>`;
   }
   const e = r.data;
+  const tail = isT() ? recordTail(e) : null;
+  // the lottery: the index's lottery/<E>.json first (static, kept for every epoch), then the node, which holds its last settlements only
+  let lot = isT() ? await file(`lottery/${n}.json`, 300000) : null;
+  if (isT() && !lot) lot = await api(`/epoch/${n}/lottery`).catch(() => null);
+  const tk = isT() && !lot ? await file('tickets.json') : null;
   const pHead = ['card', 'owner', '>amount'];
   const pRows = (e.payouts || []).map((p) => tds([ref('card', p.card), ref('neuron', p.owner), grp(p.amount)], pHead));
   return `<p class="kick">epoch</p><h1>epoch <em>${grp(e.epoch)}</em></h1><p class="sub">digest ${full(e.digest)}</p>${crumbs}
   <h2>settlement</h2><div class="tiles">${tile('budget', amtc(e.budget), 'a quarter of the pool at settlement', 'hero')}${tile('paid', amtc(e.paid), `to ${grp((e.payouts || []).length)} positions`)}${tile('rewarded', grp(e.rewarded), 'positions with positive credit')}${tile('Δ syntropy', grp(e.delta_syntropy), 'J(φ*ₑ) − J(φ*ₑ₋₁), recorded')}</div>
+  ${lotterySection(n, e, tail, lot, tk)}
   <h2>record</h2>${kv([
     ['boundary', hlink(e.boundary)], ['settled at', hlink(e.settled_at)],
     ['particles', grp(e.particles)], ['axons', grp(e.axons)], ['syntropy', grp(e.syntropy)], ['focus', `${grp(e.focus_bps)}${SEP}bps of the subsidy in epoch ${grp(e.epoch + 1)}`],
     ['pool after', amt(e.pool_after)], ['φ* digest', full(e.phi)], ['beacon', full(e.beacon)], ['boundary root', full(e.boundary_root)], ['payouts root', full(e.payouts_root)],
+    tail && ['players', `${grp(tail.players)} · the game of this epoch, recorded`], tail && ['samples', `${grp(tail.samples)} marginals drawn by the window's tickets`],
+    tail && ['paid by mean', `${grp(tail.by_mean)} of ${grp(tail.players)} players had K_MIN samples; the rest were paid their exact gradient`], tail && ['v(N)', `${nats(tail.value)} · the value of the grand coalition, recorded`],
   ])}
   <h2>payouts</h2>${table(pHead, pRows, 'no payouts this epoch: no position took its axon side to a new high with a positive share')}`;
+}
+
+// the lottery of an epoch (rewards.md §7 'the payout'): per player k, the sampled mean against the exact gradient, which rule paid
+function lotterySection(n, e, tail, lot, tk) {
+  if (!isT()) return `<h2>lottery</h2><div class="empty">the lottery arrives with ticket mining at the alpha's redeploy: this page then shows, per player of the epoch's game, how many tickets sampled it, the sampled mean against the exact gradient, and which rule paid.</div>`;
+  const ls = tk && (tk.lotteries || []).find((x) => Number(x.epoch) === n);
+  const kMin = Number((lot && lot.k_min) || (ls && ls.k_min) || 64);
+  const N = lot ? Number(lot.players) : ls ? Number(ls.players) : tail ? tail.players : null;
+  const S = lot ? Number(lot.samples) : ls ? Number(ls.samples) : tail ? tail.samples : null;
+  const value = lot ? lot.value : ls ? ls.value : tail ? tail.value : null;
+  const byMean = lot ? lot.by_mean : ls ? ls.by_mean : tail ? tail.by_mean : null;
+  const tiles = `<div class="tiles">${tile('players', grp(N), N === 0 ? 'no stake changed in the epoch: the window probed the gradient' : 'links whose stake changed between the two boundaries', 'hero')}
+    ${tile('samples', grp(S), N ? `Σ k over the players · ${(S / N).toFixed(1)} per player on average` : 'marginals drawn by the window\'s tickets')}
+    ${tile('paid by the mean', byMean === null ? '—' : grp(byMean), `players with k ≥ K_MIN = ${grp(kMin)} · the other ${N === null || byMean === null ? '—' : grp(N - byMean)} by their exact gradient`)}
+    ${tile('v(N)', value === null ? '—' : nats(value), 'the value of the grand coalition: what the epoch created, the cap of every share')}</div>`;
+  if (!lot) {
+    return `<h2>lottery</h2>${tiles}<div class="empty">${ls ? `the node holds the per-player estimate of its last settlements only and the index kept this epoch's totals, not its table: Σ a⁺ ${nats(ls.a_plus)}, Σ paid ${nats(ls.paid)} to ${grp(ls.paid_players)} player${ls.paid_players === 1 ? '' : 's'}${ls.rescaled ? `, rescaled to v(N), dust ${nats(ls.dust)} to the pool` : ', nothing rescaled: Σ a⁺ or v(N) was not positive, the pool carries forward'}.` : 'the node holds no estimate of this epoch (it keeps its last settlements only) and the index did not catch it.'}</div>`;
+  }
+  const est = lot.estimates || [];
+  const head = ['card', 'side', '>k', '>mean', '>± s.e.', '>exact', 'rule', '>a(c)', '>paid share'];
+  const rows = est.map((p) => {
+    const byM = Number(p.k) >= kMin;
+    return tds([ref('card', p.card), val(p.side), grp(p.k), nats(p.mean), nats(p.stderr), nats(p.exact), `<span class="kind ${byM ? 'mean' : 'exact'}">${byM ? 'mean' : 'exact'}</span>`, nats(p.a), big(p.paid) > 0n ? nats(p.paid) : '<span class="mute">0</span>'], head);
+  });
+  const aPlus = est.reduce((s, p) => s + (big(p.a) > 0n ? big(p.a) : 0n), 0n); const paid = est.reduce((s, p) => s + big(p.paid), 0n);
+  const v = big(lot.value); const rescaled = aPlus > 0n && v > 0n;
+  return `<h2>lottery</h2>${tiles}${table(head, rows, 'no player: the epoch\'s game was empty, every ticket of the window probed the gradient of the graph')}
+  <p class="note">${est.length ? `a(c) is the mean of the k sampled marginals when k ≥ K_MIN = ${grp(kMin)}, else the exact four-node path gradient computed by the same engine; a⁺ = max(0, a). the shares paid are a⁺ rescaled to v(N) and floored: Σ a⁺ = ${nats(aPlus.toString())}, v(N) = ${nats(lot.value)}, ${rescaled ? `factor ${(Number(v) / Number(aPlus)).toPrecision(4)}, Σ paid ${nats(paid.toString())}, dust ${nats((v - paid).toString())} stays in the pool` : 'so nothing was rescaled or paid: Σ a⁺ or v(N) was not positive and the pool carries forward'}. the standard error is the realized one, published beside the mean, not consensus. ` : ''}samples ${grp(lot.samples)} over the window ${hlink(Number(e.boundary) + 1)}–${ref('block', lot.window_end)}, settled at ${hlink(lot.settled_at)} (<a href="${REWARDS}#7-settlement-mining" target="_blank" rel="noopener">rewards §7</a>).</p>`;
 }
 
 /* focus: three indexes — particles (the node, live), axons and neurons (the indexer, once per settled epoch) */
@@ -990,11 +1112,18 @@ async function history() {
   if (!h) {
     return `<p class="kick">history · ${esc(st.chain)}</p><h1>the whole <em>chain</em></h1><div class="empty">the history comes from the explorer's index (data/history.json), which is not served here yet.</div>`;
   }
+  const T = h.work === 'tickets' || isT();
+  Object.assign(CHARTS[0], T
+    ? { title: 'tickets/s', unit: 'tickets/s', note: 'Σ attempts per block ÷ Δt per bin (at least 12 blocks), the chain\'s sampling rate; the band is the range of a 12-block rolling estimate inside the bin', fmt: (v) => si(v, 'tickets/s') }
+    : { title: 'hashrate', unit: 'H/s', note: 'Σ work ÷ Δt per bin (at least 12 blocks); the band is the range of a 12-block rolling estimate inside the bin', fmt: (v) => si(v, 'H/s') });
+  Object.assign(CHARTS[1], T
+    ? { title: 'attempts per block', unit: 'tickets', note: 'expected tickets per block, 2^256 ÷ (target + 1): the difficulty of settlement mining, floored at 16 (2^252); mean and range per bin' }
+    : { title: 'difficulty', unit: 'hashes', note: 'expected hashes per block, 2^256 ÷ (target + 1); mean and range per bin' });
   const tiles = s ? [
     tile('indexed', grp(s.height), `every block from genesis · ${ago(s.generated)}`, 'hero'),
-    tile('hashrate<span class="est">100 blocks</span>', si(s.hashrate_100, 'H/s'), `1,000 blocks: ${si(s.hashrate_1000, 'H/s')}`),
+    tile(`${T ? 'tickets/s' : 'hashrate'}<span class="est">100 blocks</span>`, si(s.hashrate_100, T ? 'tickets/s' : 'H/s'), `1,000 blocks: ${si(s.hashrate_1000, T ? 'tickets/s' : 'H/s')}`),
     tile('block time', `${Number(s.block_time_1000).toFixed(1)}<span class="u">s</span>`, `mean of the last 1,000 · last 100: ${Number(s.block_time_100).toFixed(1)}${SEP}s`),
-    tile('chainwork', si(Number(s.chainwork)), `hashes behind the tip · difficulty now ${si(Number(s.difficulty))}`),
+    tile('chainwork', si(Number(s.chainwork)), `${T ? 'attempts' : 'hashes'} behind the tip · ${T ? 'attempts per block' : 'difficulty'} now ${si(Number(s.difficulty))}`),
     tile('signals', grp(s.signals_total ?? s.txs_total), `coinbase excluded · ${grp(s.staking_signals ?? s.staking_txs)} staking`),
     tile('miners', grp((s.miners_1000 || []).length), `distinct in the last 1,000 blocks · top ${s.miners_1000 && s.miners_1000[0] ? `${ref('neuron', s.miners_1000[0].miner)} ${grp(s.miners_1000[0].blocks)}` : '—'}`),
   ].join('') : '';
@@ -1138,7 +1267,7 @@ const moreBtn = (key, have, total) => (total > have ? `<div class="pager"><butto
 
 function earnTile() {
   const e = LIVE.summary && LIVE.summary.earnings; if (!e) return '';
-  return tile('paid to stakers', amtc(e.to_stakers), `for knowledge, all time · to miners ${grp(e.to_miners)} for header work · ${grp(e.pool)} held in the pool · <a href="#/earnings">earnings →</a>`, 'wide stake');
+  return tile('paid to stakers', amtc(e.to_stakers), `for knowledge, all time · to miners ${grp(e.to_miners)} for ${isT() ? 'tickets won' : 'header work'} · ${grp(e.pool)} held in the pool · <a href="#/earnings">earnings →</a>`, 'wide stake');
 }
 
 async function earn(sub) {
@@ -1161,7 +1290,7 @@ function earnStrip(E) {
   const T = E.totals; const minted = big(T.minted);
   const paidEpochs = E.ledger.filter((r) => r[7] !== null && big(r[7]) > 0n).length;
   return `<div class="tiles">
-    ${tile('to miners', amtc(T.to_miners), `for header work: the subsidy minus the pool's cut (${fpct(ratio(big(T.miner_subsidy), minted))} of all minted) plus ${grp(T.fees)} in fees`, 'hero wide')}
+    ${tile('to miners', amtc(T.to_miners), `for ${isT() ? 'tickets won, the settlement samples that are the chain\'s work' : 'header work'}: the subsidy minus the pool's cut (${fpct(ratio(big(T.miner_subsidy), minted))} of all minted) plus ${grp(T.fees)} in fees`, 'hero wide')}
     ${tile('to stakers', amtc(T.paid), `for knowledge: paid at ${pl(paidEpochs, 'settlement')} to positions whose stake raised syntropy · ${fpct(ratio(big(T.paid), minted))} of all minted`, 'wide stake')}
     ${tile('in the pool', amtc(T.pool), `the cut in, ${grp(T.to_pool)}, minus what settlements paid out · a quarter of it is the next budget`)}
     ${tile('split now', bps(E.focus_bps_next), `of each block's subsidy goes to the pool: ${grp(E.cut_next)} of ${grp(E.subsidy)} · θ = ${fpct(lastTheta(E))} of supply is active stake`)}
@@ -1177,19 +1306,23 @@ function splitBar(E) {
 }
 
 /* miners */
-const MINER_HEAD = ['#', 'miner', '>blocks', '>share of blocks', '', '>hashrate~', '>earned', '>fees~', 'first block~', 'last block'];
+const minerHead = () => (isT()
+  ? ['#', 'miner', '>tickets won', '>share of tickets', '', '>sample rate~', '>earned', '>fees~', 'first block~', 'last block']
+  : ['#', 'miner', '>blocks', '>share of blocks', '', '>hashrate~', '>earned', '>fees~', 'first block~', 'last block']);
 const minerRows = (w, n) => w.rows.slice(0, n).map((r, i) => tds([grp(i + 1), ref('neuron', r.m), grp(r.blocks), fpct(r.share), `<i class="bar" style="width:${Math.max(1, r.share * 110).toFixed(1)}px"></i>`,
-  `${si(r.hr, 'H/s')}<span class="est">est</span>`, amtc(r.earned), grp(r.fees), `${hlink(r.first)} <span class="mute">${ago(r.first_t)}</span>`, `${hlink(r.last)} <span class="mute">${ago(r.last_t)}</span>`], MINER_HEAD));
+  `${si(r.hr, unit())}<span class="est">est</span>`, amtc(r.earned), grp(r.fees), `${hlink(r.first)} <span class="mute">${ago(r.first_t)}</span>`, `${hlink(r.last)} <span class="mute">${ago(r.last_t)}</span>`], minerHead()));
 const MW = [['hour', '1 hour'], ['day', '24 hours'], ['all', 'all blocks']];
 function earnMiners(E) {
   const w = E.miners[EA.mw] || E.miners.all;
   const top = w.rows[0];
   return `${earnStrip(E)}
-  <h2>top miners</h2><div class="seg" role="group" aria-label="window">${MW.map(([k, l]) => `<button data-mw="${k}" class="${EA.mw === k ? 'on' : ''}">${l}</button>`).join('')}<span class="mute">heights ${grp(w.from)}–${grp(w.to)}</span></div>
-  <div class="tiles">${tile('blocks', grp(w.blocks), `found in the window by ${pl(w.miners, 'miner')}`, 'hero')}${tile('earned', amtc(w.earned), 'by the miners in the window: subsidy minus the cut, plus fees')}
-    ${tile('hashrate<span class="est">estimate</span>', si(w.hashrate, 'H/s'), 'Σ work ÷ the window\'s span')}${top ? tile('the first', fpct(top.share), `of the blocks: ${short(top.m)}`) : ''}</div>
-  <h2>&nbsp;</h2>${table(MINER_HEAD, minerRows(w, 100), 'no block in this window')}
-  <p class="note">a miner is the key its coinbase pays. earned = Σ over its blocks of SUBSIDY − cut + the block's fees, exactly its coinbase amounts (<a href="${SPEC}#62-coinbase-and-pool" target="_blank" rel="noopener">chain-economy §6.2</a>). share of blocks estimates its share of the hashrate: with n blocks the estimate is off by about 1/√n of itself (±${w.rows[0] ? fpct(1 / Math.sqrt(Math.max(1, w.rows[0].blocks))) : '—'} for the first row). hashrate = its share of the window's work × Σ work ÷ the span; the work of a block is 2^256 ÷ (target + 1).</p>`;
+  <h2>top miners${isT() ? ' · by tickets won' : ''}</h2><div class="seg" role="group" aria-label="window">${MW.map(([k, l]) => `<button data-mw="${k}" class="${EA.mw === k ? 'on' : ''}">${l}</button>`).join('')}<span class="mute">heights ${grp(w.from)}–${grp(w.to)}</span></div>
+  <div class="tiles">${tile(isT() ? 'tickets won' : 'blocks', grp(w.blocks), `${isT() ? 'blocks, one winning ticket each,' : ''} found in the window by ${pl(w.miners, 'miner')}`, 'hero')}${tile('earned', amtc(w.earned), 'by the miners in the window: subsidy minus the cut, plus fees')}
+    ${tile(`${isT() ? 'tickets/s' : 'hashrate'}<span class="est">estimate</span>`, si(w.hashrate, unit()), isT() ? 'Σ attempts per block ÷ the window\'s span · attempts per block ≈ 2^256/target' : 'Σ work ÷ the window\'s span')}${top ? tile('the first', fpct(top.share), `of the ${isT() ? 'tickets' : 'blocks'}: ${short(top.m)}`) : ''}</div>
+  <h2>&nbsp;</h2>${table(minerHead(), minerRows(w, 100), 'no block in this window')}
+  <p class="note">a miner is the key its coinbase pays. earned = Σ over its blocks of SUBSIDY − cut + the block's fees, exactly its coinbase amounts (<a href="${SPEC}#62-coinbase-and-pool" target="_blank" rel="noopener">chain-economy §6.2</a>). ${isT()
+    ? `a block is one winning ticket, so tickets won = blocks. share of tickets estimates a miner's share of the sampling: with n tickets the estimate is off by about 1/√n of itself (±${w.rows[0] ? fpct(1 / Math.sqrt(Math.max(1, w.rows[0].blocks))) : '—'} for the first row). sample rate = its share × Σ attempts ÷ the span, in tickets per second; the attempts a block expects are 2^256 ÷ (target + 1), and an attempt is one Shapley sample, W_TICKET + 1 cold solves of the epoch engine (at pussy's size 2.2 s on one M4 Max core, 7.8 s on one Xeon core: cybernode audit/chain/ticket-pow-2026-11.md), so the rate is bounded by cores and memory, not by hashing.`
+    : `share of blocks estimates its share of the hashrate: with n blocks the estimate is off by about 1/√n of itself (±${w.rows[0] ? fpct(1 / Math.sqrt(Math.max(1, w.rows[0].blocks))) : '—'} for the first row). hashrate = its share of the window's work × Σ work ÷ the span; the work of a block is 2^256 ÷ (target + 1).`}</p>`;
 }
 
 /* stakers and positions */
@@ -1297,7 +1430,7 @@ function earnEmission(E) {
     `pool after of ${grp(s.pool_after_checked)} settlements = Σ cut − Σ paid: ${s.pool_after_mismatch && s.pool_after_mismatch.length ? `differs in ${s.pool_after_mismatch.join(', ')}` : 'equal'}`,
     s.pool_now_matches === null || s.pool_now_matches === undefined ? 'pool now: the node had moved on when it was read' : `pool now ${grp(s.pool_now_calc)} = the node's ${grp(s.pool_now_node)}: ${s.pool_now_matches ? 'equal' : 'differs'}`];
   return `${earnStrip(E)}
-  <p class="lede">every block mints ${grp(E.subsidy)} (1 % of genesis supply a year). the miner's coinbase takes it minus the pool's cut, plus the block's fees: that pays for header work, the proof of work that orders the chain. the cut, floor(SUBSIDY × focus_bps ÷ 10,000), goes to the focus pool; focus_bps = min(${grp(E.focus_max_bps)}, √θ in basis points) with θ = active stake ÷ supply at the boundary, so the pool grows with the capital that takes risk on the graph and never takes more than half (<a href="${SPEC}#61-the-split" target="_blank" rel="noopener">chain-economy §6.1–6.2</a>). each settlement releases a quarter of the pool as the epoch's budget and pays it to positions whose stake raised syntropy (§5.5).</p>
+  <p class="lede">every block mints ${grp(E.subsidy)} (1 % of genesis supply a year). the miner's coinbase takes it minus the pool's cut, plus the block's fees: that pays for ${isT() ? 'the winning ticket, the settlement sample that is the proof of work ordering the chain' : 'header work, the proof of work that orders the chain'}. the cut, floor(SUBSIDY × focus_bps ÷ 10,000), goes to the focus pool; focus_bps = min(${grp(E.focus_max_bps)}, √θ in basis points) with θ = active stake ÷ supply at the boundary, so the pool grows with the capital that takes risk on the graph and never takes more than half (<a href="${SPEC}#61-the-split" target="_blank" rel="noopener">chain-economy §6.1–6.2</a>). each settlement releases a quarter of the pool as the epoch's budget and pays it to positions whose stake raised syntropy (§5.5).</p>
   <div class="charts">${EA.charts.map((c) => `<figure class="chart"><figcaption><span class="ct">${c.title}</span><span class="lg">${c.series.map((x) => `<i style="background:${x.col}"></i>${x.name}`).join('')}</span></figcaption><canvas id="${c.id}" height="200"></canvas><div class="tipbox" id="${c.id}-tip" hidden></div></figure>`).join('')}</div>
   <h2>the ledger per epoch</h2><div id="ea-led">${table(LED_HEAD, rows, 'no block yet')}${moreBtn('led', EA.shown.led, led.length)}</div>
   <p class="note">sanity · ${checks.join(' · ')}. the split of a passed boundary whose epoch has not settled is computed the same way and checked once it settles. raw data: <a href="${DATA}/earnings.json">earnings.json</a>.</p>`;
@@ -1308,12 +1441,15 @@ function earnSummary(E, P) {
   const S = P ? P.stakers : [];
   const SH = ['#', 'neuron', '>earned', '>a year~'];
   const sRows = S.slice(0, 8).map((r, i) => tds([grp(i + 1), ref('neuron', r.n), amtc(r.earned), r.apr === null ? '—' : fpct(r.apr)], SH));
-  const MH = ['#', 'miner', '>blocks', '>share', '>earned'];
-  const mRows = w.rows.slice(0, 8).map((r, i) => tds([grp(i + 1), ref('neuron', r.m), grp(r.blocks), fpct(r.share), amtc(r.earned)], MH));
+  const MH = isT() ? ['#', 'miner', '>tickets won', '>share', '>sample rate~', '>earned'] : ['#', 'miner', '>blocks', '>share', '>earned'];
+  const mRows = w.rows.slice(0, 8).map((r, i) => tds([grp(i + 1), ref('neuron', r.m), grp(r.blocks), fpct(r.share), ...(isT() ? [`${si(r.hr, unit())}<span class="est">est</span>`] : []), amtc(r.earned)], MH));
   const tvOf = new Map();   // the summary leaves focus moved to the paid-knowledge page
-  return `<p class="lede">two kinds of work are paid, and only these two: header work, the proof of work that orders blocks, paid to the miner of every block; and knowledge, stake on a cyberlink that makes the network's attention more ordered, paid to positions at each settlement by how much their stake raised syntropy. everything below is read from the chain: coinbase amounts, the epoch records and the staking signals.</p>
+  return `<p class="lede">${isT()
+    ? 'two kinds of work are paid, and only these two: tickets, the settlement samples that order blocks, paid to the miner whose sample won each block; and knowledge, stake on a cyberlink that makes the network\'s attention more ordered, paid to positions at each settlement by the lottery\'s estimate of how much their stake raised syntropy. one computation, two faces: the miner\'s sample is a draw of the same game the settlement pays.'
+    : 'two kinds of work are paid, and only these two: header work, the proof of work that orders blocks, paid to the miner of every block; and knowledge, stake on a cyberlink that makes the network\'s attention more ordered, paid to positions at each settlement by how much their stake raised syntropy.'} everything below is read from the chain: coinbase amounts, the epoch records and the staking signals.</p>
   ${earnStrip(E)}
-  <div class="cols"><div><h2>top miners · all blocks</h2>${table(MH, mRows, 'no miner yet')}<div class="pager"><a href="#/earnings/miners">last hour, day, all →</a></div></div>
+  ${miningNote('earnings')}
+  <div class="cols"><div><h2>top miners · ${isT() ? 'by tickets won' : 'all blocks'}</h2>${table(MH, mRows, 'no miner yet')}<div class="pager"><a href="#/earnings/miners">last hour, day, all →</a></div></div>
   <div><h2>top stakers</h2>${P ? table(SH, sRows, 'no staker yet') : '<div class="empty">needs data/payouts.json</div>'}<div class="pager"><a href="#/earnings/stakers">stakers and positions →</a><a class="end" href="#/earnings/yield">yield →</a></div></div></div>
   <h2>latest paid knowledge</h2>${P && P.receipts.length ? P.receipts.slice(0, 3).map((r) => receipt(r, P, tvOf)).join('') : '<div class="empty">no payout yet.</div>'}
   <div class="pager"><a href="#/earnings/paid">every receipt, the price of knowledge →</a><a class="end" href="#/focus/moved">who moved focus →</a></div>`;
