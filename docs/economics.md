@@ -16,11 +16,11 @@ One policy cannot hold three opposite needs. The money of cyber must be as hard 
 
 ## running: what the node carries today
 
-These are the values of [`network.toml`](../network.toml), the same for both networks.
+The rules below are [`network.toml`](../network.toml)'s, and the rule values — the epoch, the seven-day lock, the pool's half, the cap on a position's reward — are the same for both networks. The supply at genesis is pussy's own, from [`genesis/genesis.lock`](../genesis/genesis.lock), and the subsidy is 1 % a year of it: a network with another burial has another figure.
 
 | | |
 |---|---|
-| the supply at genesis | 1,099,389,810,279,114,036 micro-units, the bank supply of the old chain at its halt |
+| the supply at genesis | 1,099,389,810,279,114,036 micro-units, the bank supply of the old chain at its halt ([`genesis/genesis.lock`](../genesis/genesis.lock)) |
 | new coins | 1 % of the genesis supply a year: 10,458,426,657 micro-units a block, constant |
 | who receives them | the miner of a block, and the focus pool, which takes at most half |
 | a stake | a position on a cyberlink, locked seven days |
@@ -32,7 +32,7 @@ The old resource tokens are carried as balances and have no function in the new 
 
 ## proposed: the community's own policy
 
-Proposed on 2026-09-27 and open until the genesis fixes it. None of it is in the node.
+Proposed on 2026-09-27 and open until the genesis fixes it. None of it is in the node, and none of its figures is pinned in this repository: the table restates the external source below as it stood on that date.
 
 | | proposed for PUSSY | for comparison, BOOT |
 |---|---|---|

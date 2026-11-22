@@ -13,14 +13,16 @@ space-pussy was first a cosmos chain: the second network built on go-cyber, besi
 
 ## its tokens
 
-It mirrored bostrom's structure of four tokens. The total supply was one exa PUSSY: 18 heroes received 0.1 % each, and the rest stood in a community pool meant as gifts to the most active cosmos communities.
+It mirrored bostrom's structure of four tokens. The supply at genesis was one exa PUSSY: 18 heroes received 0.1 % each, and the rest stood in a community pool meant as gifts to the most active cosmos communities ([why spacepussy](why-spacepussy.md)).
 
-| token | role |
-|---|---|
-| PUSSY | consensus and governance |
-| CUM | the liquid form of staked PUSSY |
-| VIP | will: the room to write cyberlinks |
-| AM | focus: the weight of a neuron's links in the rank |
+The names are the burial's, as [`snapshot/holdings.py`](../snapshot/holdings.py) labels the denoms it carries.
+
+| token | denom | role |
+|---|---|---|
+| PUSSY | `pussy` | consensus and governance |
+| LP | `liquidpussy` | the liquid form of staked PUSSY |
+| A | `milliampere` | focus: the weight of a neuron's links in the rank |
+| V | `millivolt` | will: the room to write cyberlinks |
 
 The resource tokens do not return: what they priced, the new network prices with a stake on the link itself. The planned economy is in [economics](economics.md).
 
