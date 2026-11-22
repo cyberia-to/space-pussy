@@ -1,0 +1,21 @@
+# the graph pussy starts with: the cyberlinks of the old chain, carried as they were.
+#
+# The rules cybernode's genesis pipeline applies today (cybernode specs/genesis.md § derivation),
+# written out for this network; the pipeline does not read this file yet.
+
+[particles]
+# a particle of the old chain was a content address of the old kind. No bytes are fetched at
+# genesis: every address a link names becomes the hash of the address itself.
+readdress = "hemera(the bytes of the old content address)"
+naming_links = false
+
+[links]
+order = ["passports", "the restored links in the order of the old chain"]
+passports = "one link per passport at height 0: owner -> hemera(\"passport:\" + nickname), authored by the owner"
+restored = "every row of cyberlinks_indexed.csv.gz: the author's owner, the two particles, the old height"
+duplicates = "kept"
+stake = 0                                      # a link of the genesis carries no stake: topology only
+check = "the row count equals the restored link count the manifest declares"
+
+[result]
+link_frames = 29113

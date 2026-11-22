@@ -1,0 +1,33 @@
+# who holds what at block 0: the rules by which the burial snapshot becomes the balances of pussy.
+#
+# These are the rules cybernode's genesis pipeline applies today (cybernode specs/genesis.md
+# § derivation, specs/chain.md §4.2), written out for this network. The pipeline is code and does
+# not read this file yet; the vocabulary of rules becomes cybernode's when it does
+# (soft3 projects/network-repos.md §3.3). Integers only: every amount is whole micro-units.
+
+[owners]
+# every address the snapshot names — accounts, bank rows, delegators, unbonding entries, link
+# authors, passport owners — becomes one owner, once.
+with_secp256k1_key = "neuron_of(pubkey)"      # the key is re-derived to its address and refused on mismatch
+without_key = "legacy_owner(hrp, account)"    # never signed, multisig, contract, module
+unique = true
+
+[balances]
+carry = "every denom of the bank"             # each denom is its own token
+delegated = "returned to the delegator"       # out of the staking pool; dust stays on the bonded pool
+unbonding = "returned to the delegator"
+liquidity_positions = "dissolved into the pool's reserves at the halt"  # floor; dust to the reserve account
+pool_coins = "dropped"
+exclude = "a denom with a balance or a total above 2^64 - 1, whole, and listed in the build's report"
+native_may_be_excluded = false
+check = "the sum of every carried denom equals supply.json"
+
+[supply]
+genesis_supply = "the bank supply of the native coin at the halt"   # no swap is executed
+value = "1099389810279114036"                 # micro-units, from the lock
+subsidy = "floor(genesis_supply / 105120000)" # per block
+
+[result]
+# what the rules produce from the pinned snapshot; the lock carries the digests.
+balance_frames = 1385
+tokens = 23

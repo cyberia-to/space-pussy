@@ -1,0 +1,76 @@
+# pussy — the network's identity and rules.
+#
+# Every value here is the one the node runs today. They are still constants of the binary
+# (cybernode rs/src/chain/params.rs and rs/src/cli.rs at 8ab226604898, 2026-11-22): cybernode does
+# not read this file yet. It is written so that the network has one place that states it, and so
+# that the day cybernode takes a network as its input (soft3 projects/network-repos.md) nothing
+# about pussy has to be found anywhere else. A value changes here only together with the node.
+
+[network]
+name = "pussy"
+hrp = "pussy"                    # the prefix of a legacy address
+denom = "pussy"                  # the native coin
+genesis_time = 1793885820        # 2026-11-05T13:37:00Z, the time pinned for the first attempt; the launch is by
+                                 # readiness, and a new time rebuilds the genesis file and its lock
+
+[rules]
+rule_set = 1
+activations = [[1, 0]]           # rule set 1 from height 0
+
+[authorization]
+scheme = "NSIG1"                 # secp256k1 signatures on every signal: transfers, cyberlinks, claims
+
+[work]
+block_time = 30                  # seconds
+half_life = 600                  # seconds, of the difficulty correction
+mtp_window = 11                  # blocks, median time past
+max_future_drift = 120           # seconds
+genesis_bits = "0x1e010000"      # the first target, 2^232
+pow_limit_bits = "0x1e100000"    # the easiest target, 2^236
+
+[blocks]
+header_bytes = 168
+max_block_bytes = 262144
+max_block_signals = 1024
+max_signal_bytes = 512
+min_fee_per_byte = 1
+nonce_window = 16
+orphan_pool_headers = 1024
+orphan_pool_seconds = 600
+
+[finality]
+coinbase_maturity = 100          # blocks
+finality_depth = 120             # blocks
+max_reorg = 119                  # blocks
+checkpoint_interval = 120        # blocks
+checkpoint_sunset = 525600       # blocks
+checkpoint_key = ""              # none set: the chain launches without a foundation key
+
+[emission]
+blocks_per_year = 1051200
+subsidy_divisor = 105120000      # subsidy = floor(genesis supply / divisor): 1 % a year of the genesis supply
+subsidy = 10458426657            # per block, from the lock's genesis supply
+
+[epoch]
+length = 240                     # blocks, about two hours
+settle_delay = 120               # blocks after an epoch's boundary
+min_lock = 20160                 # blocks a stake stays locked, seven days
+settle_budget_seconds = 900
+
+[focus]
+phi_steps = 48                   # iterations of the focus computation
+attribution_nodes = 4            # quadrature nodes of the path gradient
+
+[rewards]
+# The reward law is being completed (soft3 projects/complete-rewards.md): the surprise, karma, the
+# losing side's payment and the budget's control are constants or absent in the node today.
+focus_max_bps = 5000             # the focus pool takes at most half of the subsidy
+pool_release = 4                 # an epoch releases a quarter of the pool
+max_reward_ppm = 10000           # a position takes at most 1 % of the stake it added
+high_water_keep = [65410, 65536] # the decay of a link's high-water mark per epoch, half-life 30 days
+surprise = 1                     # a constant at launch
+karma = 1                        # a constant at launch
+
+[ports]
+api = "127.0.0.1:7781"           # the node's read and submit API
+radio = "0.0.0.0:7791"           # the node's wire, UDP
