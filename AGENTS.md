@@ -29,4 +29,4 @@ the node is cyberia-to/cybernode. a change to how a network runs goes there; a c
 
 - `python3 -c "import tomllib,sys; [tomllib.load(open(f,'rb')) for f in sys.argv[1:]]" network.toml endpoints.toml genesis/sources.toml genesis/distribution.toml genesis/graph.toml genesis/genesis.lock`
 - `shasum -a 256 snapshot/manifest.json` equals `manifest_sha256` in `genesis/sources.toml` and `source_manifest_sha256` in the lock
-- the site opens from the files: `python3 ~/cyber/cyber/scripts/cdp.py file://$PWD/site/index.html`
+- the site opens when served from `site/`: `python3 -m http.server -d site 8765`, then `python3 ~/cyber/cyber/scripts/cdp.py http://localhost:8765/` and `…/explorer/`; the data the server maps in production answers 404 here
