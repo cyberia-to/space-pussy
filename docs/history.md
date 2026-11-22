@@ -1,4 +1,4 @@
-# the old chain
+# the history of space-pussy
 
 space-pussy was first a cosmos chain: the second network built on go-cyber, beside bostrom, launched in 2022 so that two knowledge graphs could talk to each other. The words it was launched with are in [why spacepussy](why-spacepussy.md).
 
@@ -10,6 +10,21 @@ space-pussy was first a cosmos chain: the second network built on go-cyber, besi
 | the coin | PUSSY, with a genesis supply of one exa and a drop to the cosmos communities |
 | its end | halted at height 19,940,993, on 2026-06-14 at 08:36:41 UTC |
 | what it left | 1,099,389,810,279,114,036 micro-units of the native coin in the bank, 23 tokens in all, and 29,112 cyberlinks recovered from its blocks |
+
+## its tokens
+
+It mirrored bostrom's structure of four tokens. The supply at genesis was one exa PUSSY: 18 heroes received 0.1 % each, and the rest stood in a community pool meant as gifts to the most active cosmos communities ([why spacepussy](why-spacepussy.md)).
+
+The names are the burial's, as [`snapshot/holdings.py`](../snapshot/holdings.py) labels the tokens it carries.
+
+| token | its name on the old chain | role |
+|---|---|---|
+| PUSSY | `pussy` | consensus and governance |
+| LP | `liquidpussy` | the liquid form of staked PUSSY |
+| A | `milliampere` | focus: the weight of a neuron's links in the rank |
+| V | `millivolt` | will: the room to write cyberlinks |
+
+The resource tokens do not return: what they priced, the new network prices with a stake on the link itself. The planned economy is in [economics](economics.md).
 
 ## how it was buried
 

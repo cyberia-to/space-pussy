@@ -2,7 +2,7 @@
 
 > the doctrine of the home is `~/cyber/AGENTS.md`; it applies here first.
 
-this repository is one network: pussy. it holds what defines the network and what shows it, and no code of a node.
+this repository is one network: pussy, the network of PUSSY. it holds what defines the network and what shows it, and no code of a node. its layout is the standard of cybernode `specs/network.md`; the twin is `bostrom`.
 
 ## what lives here
 
@@ -12,7 +12,7 @@ this repository is one network: pussy. it holds what defines the network and wha
 - `site/` — spacepussy.ai: the deck and the explorer; static files, no build, no Node
 - `snapshot/` — the burial of the old chain: the manifest of pins, its tools, the balance checker
 - `audit/` — receipts
-- `docs/` — the story, the old chain, how to run a node
+- `docs/` — the story, the history, the economy of the token, how to run a node
 
 the node is cyberia-to/cybernode. a change to how a network runs goes there; a change to what this network is goes here.
 
@@ -23,6 +23,7 @@ the node is cyberia-to/cybernode. a change to how a network runs goes there; a c
 - `snapshot/manifest.json` is the genesis's source and is never edited: a new burial is a new manifest and a new lock.
 - the genesis file and the snapshot's files are never committed; they are built and fetched.
 - `docs/why-spacepussy.md` is the original text of 2022 and is kept as it was written.
+- `docs/economics.md` keeps the running, the proposed and the open apart: a figure moves from proposed to running only when the node carries it.
 - the old chain's code is on the branch `legacy/go-cyber` and does not come back to the default branch.
 
 ## checks before a commit
