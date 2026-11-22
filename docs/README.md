@@ -1,7 +1,8 @@
 # documents
 
 - [why spacepussy](why-spacepussy.md): the words the network was launched with in 2022, whole
-- [the old chain](the-old-chain.md): what it was, how it was buried, how it comes back
+- [history](history.md): the first life of space-pussy: what it was, how it was buried, how it comes back
+- [economics](economics.md): the economy of PUSSY — what runs, what is proposed, what is open
 - [run a node](run-a-node.md): the binary, the genesis, the node, mining, the explorer
 
 Elsewhere:

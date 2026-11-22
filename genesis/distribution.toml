@@ -2,8 +2,8 @@
 #
 # These are the rules cybernode's genesis pipeline applies today (cybernode specs/genesis.md
 # § derivation, specs/chain.md §4.2), written out for this network. The pipeline is code and does
-# not read this file yet; the vocabulary of rules becomes cybernode's when it does
-# (soft3 projects/network-repos.md §3.3). Integers only: every amount is whole micro-units.
+# not read this file yet; the vocabulary of rules is cybernode specs/network.md §4.
+# Integers only: every amount is whole micro-units.
 
 [owners]
 # every address the snapshot names — accounts, bank rows, delegators, unbonding entries, link

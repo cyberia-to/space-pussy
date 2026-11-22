@@ -18,7 +18,9 @@ From the words space-pussy was launched with in 2022, kept whole in [why spacepu
 | [site/](site/) | [spacepussy.ai](https://spacepussy.ai): the deck and the explorer, static, no build |
 | [snapshot/](snapshot/) | the burial of the old chain: the manifest of pins, the tools that extracted it, the balance checker |
 | [audit/](audit/) | receipts: what was measured, with its date |
-| [docs/](docs/) | the story, the old chain, how to run a node |
+| [docs/](docs/) | the story, the history, the economy of PUSSY, how to run a node |
+
+The layout is the standard of a network repository, cybernode [`specs/network.md`](https://github.com/cyberia-to/cybernode/blob/main/specs/network.md). The twin is [bostrom](https://github.com/cyberia-to/bostrom), the network of BOOT.
 
 ## the network in numbers
 
@@ -67,4 +69,4 @@ More in [run a node](docs/run-a-node.md).
 
 ## the old chain
 
-The code of the cosmos chain — the app, its modules, the old web client and landings — left this repository on 2026-11-22 and is kept whole on the branch [`legacy/go-cyber`](https://github.com/cyberia-to/space-pussy/tree/legacy/go-cyber). What the chain was and how it was buried: [the old chain](docs/the-old-chain.md).
+The code of the cosmos chain — the app, its modules, the old web client and landings — left this repository on 2026-11-22 and is kept whole on the branch [`legacy/go-cyber`](https://github.com/cyberia-to/space-pussy/tree/legacy/go-cyber). What the chain was and how it was buried: [history](docs/history.md).
