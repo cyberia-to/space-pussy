@@ -1,0 +1,28 @@
+# what the genesis of pussy is built from: the burial snapshot of the old space-pussy chain.
+# The pins of every file — its content address, sha256 and size — are in the manifest; this file
+# pins the manifest.
+
+[burial]
+chain = "space-pussy"                  # the cosmos chain that ran on go-cyber and was halted
+halt_height = 19940993
+halt_time = "2026-06-14T08:36:41Z"
+extracted = "2026-08-28"
+manifest = "snapshot/manifest.json"
+manifest_sha256 = "b46cb327ca87222ceea095c6ade2eac2e5eef0cb9d3eaeff6ce7479a137ab4d1"
+site = "https://pussy.bostrom.network" # the burial site, the fallback when the content network does not answer
+
+[burial.read]
+# the files of the snapshot the genesis pipeline reads; each is fetched by its pin and verified by
+# sha256 and size on every build, cached or not. The full state export is not read.
+files = [
+  "supply.json",
+  "pools.json",
+  "pubkeys.csv",
+  "balances.csv",
+  "delegations.csv",
+  "holdings.jsonl",
+  "passports.jsonl",
+  "cyberlinks_indexed.csv.gz",
+]
+layout = "<content address>/pussy-snapshot/<name>"
+cache = "~/.cache/cyber/snapshots/pussy/" # never in git

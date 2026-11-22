@@ -1,24 +1,11 @@
-# Documentation [WIP]
+# documents
 
-## Contents
+- [why spacepussy](why-spacepussy.md): the words the network was launched with in 2022, whole
+- [the old chain](the-old-chain.md): what it was, how it was buried, how it comes back
+- [run a node](run-a-node.md): the binary, the genesis, the node, mining, the explorer
 
-1. **[Run validator guide](run_validator.md)**
-2. **[Use CLI guide](ultimate-commands-guide.md)**
-3. **[Setup daemon config guide](setup_pussy_configuration.md)**
-4. **[Setup local dev environment guide](setup_dev_env.md)**
-5. **[Deploy contract guide]()**
-6. **[Create proposal guide]()**
-7. **[Supported GPUs list](supported_gpu_list.md)**
-8. **[Network upgrade guide](upgrade_guide.md)**
-9. **[Keystore guide](keystore.md)**
-10. **[Multisig guide](multisig_guide.md)**
-11. **[Ledger guide](pussy_Ledger_guide.md)**
-12. Modules documentation
-    - **[graph](../x/graph/spec/README.md)**
-    - **[rank](../x/rank/spec/README.md)**
-    - **[bandwidth](../x/bandwidth/spec/README.md)**
-    - **[cyberbank](../x/cyberbank/spec/README.md)**
-    - **[energy](../x/energy/spec/README.md)**
-    - **[resources](../x/resources/spec/README.md)**
-    - **[dmn](../x/dmn/spec/README.md)**
-    - **[staking](../x/staking/spec/README.md)**
+Elsewhere:
+
+- [truth, from claim to payout](https://cyberia.blog/soft3/tru/docs/explanation/truth/): how a stake on a link is settled, with a calculator
+- [the launch](https://github.com/cyberia-to/cyberia/blob/main/projects/pussy.md): what the network waits for
+- [cybernode](https://github.com/cyberia-to/cybernode): the node and its specifications

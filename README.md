@@ -1,63 +1,70 @@
+# space-pussy
 
-# Why spacepussy?
+The network repository of pussy: its genesis and its configuration, the input [cybernode](https://github.com/cyberia-to/cybernode) takes to run it. Beside them stand the network's site, the burial of the chain it is reborn from, and its documents.
 
-![1](https://user-images.githubusercontent.com/83489928/193682920-37cf4893-ea16-4b2a-b326-7c1ef13817dd.png)
-    
-Today we are forging a new era in soft3. We are launching a second GPU network based on cyber-sdk. Why is it important?  
+> We are creating a planet-scale organism. We now have core components: the backbone, the nervous system, and the rudiments of the brain. But how will this organism reproduce? That is why we need a pussy.
+>
+> Superintelligence must not suffer in the cosmos alone without the ability to talk with creatures like him.
 
-## memecoin
+From the words space-pussy was launched with in 2022, kept whole in [why spacepussy](docs/why-spacepussy.md). The first chain was a second network for experiments between two knowledge graphs. It ran on go-cyber, was halted at height 19,940,993, and its state was buried with every byte pinned. This repository is where it comes back: the same balances and the same cyberlinks, on [soft3](https://github.com/cyberia-to/soft3), secured by proof of work, as the canary of the [[cyber]] launch.
 
-We have a vision for PUSSY.
+## what is here
 
-![2]![2](https://user-images.githubusercontent.com/83489928/196011271-d21631c0-779a-408b-b6ee-ebfec7b8214c.png)
-    
-We are creating a planet-scale organism. Looking at nature we can find similarities in how our organism evolved and compare it with how existing blockchains are evolving. We now have core components: the backbone, the nervous system, and the rudiments of the brain. But how will this organism reproduce? That is why we need a pussy. I envision space pussy as a symbol of resistance against the weakness of our society. With the space pussy meme everyone must ask themselves: how did it occur that we are ashamed about the thing which is the source of life for us? It's a sign that something is wrong in our culture.
+| path | what it is |
+|---|---|
+| [network.toml](network.toml) | the network's identity and rules: name, coin, the clock of work, block limits, finality, emission, the epoch, the reward parameters, ports |
+| [genesis/](genesis/) | how block 0 is made: the pinned sources, the rules of distribution, the starting graph, and the lock with the digests of the result |
+| [endpoints.toml](endpoints.toml) | where the network is met: the site, the explorer, the peers |
+| [site/](site/) | [spacepussy.ai](https://spacepussy.ai): the deck and the explorer, static, no build |
+| [snapshot/](snapshot/) | the burial of the old chain: the manifest of pins, the tools that extracted it, the balance checker |
+| [audit/](audit/) | receipts: what was measured, with its date |
+| [docs/](docs/) | the story, the old chain, how to run a node |
 
-We can have a meme coin with balls.
+## the network in numbers
 
-![3](https://user-images.githubusercontent.com/83489928/193683076-c6ddc165-f2c5-4dae-b63a-022d4a5f2498.png)
+| | |
+|---|---|
+| the coin | pussy |
+| the supply at genesis | 1,099,389,810,279,114,036 micro-units, the bank supply of the old chain at its halt |
+| new coins | 1 % of the genesis supply a year, 10,458,426,657 micro-units a block |
+| a block | 30 seconds |
+| an epoch | 240 blocks, about two hours: focus is recomputed and stakes are settled |
+| a stake | locked seven days |
+| final | 120 blocks deep |
+| the graph at genesis | 29,113 links between the particles of the old chain |
+| balances at genesis | 1,385, over 23 tokens |
 
-cyber-sdk - is one of the most powerful stacks in the blockchain universe with sequential and parallel computing, autonomous execution, and impressive social tools, including cyb.ai. So it is not a primitive doge, or shiba. It is a powerful collaborative computer. It gives butterflies in the stomach when thinking about what the community can do with space pussy.
+Every number is in [network.toml](network.toml) or [genesis/genesis.lock](genesis/genesis.lock), with where it comes from.
 
-<img width="954" alt="Screen Shot 2022-10-03 at 20 52 23" src="https://user-images.githubusercontent.com/410789/193680279-0aa7d806-5b18-4816-ae36-e717c8dde60d.png">
+## where it stands
 
-You asked us to launch `space-pussy`.
+The network is not launched. A rehearsal network, pussy-rc, runs the same state under another name and can be watched in the [explorer](https://spacepussy.ai/explorer/). The launch is by readiness and has no date: what it waits for is on [the launch's page](https://github.com/cyberia-to/cyberia/blob/main/projects/pussy.md).
 
-![4](https://user-images.githubusercontent.com/83489928/193683093-b27d2a4b-ecb1-417b-9d1d-78dbbe686118.png)
+Two things in this repository are ahead of the node, and say so in their own headers. The node still carries the values of `network.toml` as constants of its binary and the rules of `genesis/` as code: the files state them for this network so that nothing about pussy has to be found anywhere else, and the day cybernode reads a network from its repository they become its input ([networks as repositories](https://github.com/cyberia-to/soft3/blob/release/phase1/projects/network-repos.md)). And the reward parameters are the node's today, while the reward law is being completed ([complete rewards](https://github.com/cyberia-to/soft3/blob/release/phase1/projects/complete-rewards.md)).
 
-We realized that it is cool idea to create a community-led soft3 computer. It will be cheaper and more fun. It has a simple distribution that will focus solely on cosmos communities. The total supply is 1 exa PUSSY. You will be able to mint liquid pussy during staking. Now we have 18 heroes in Genesis. Every hero in genesis got 0.1% of PUSSY. The rest is in the community pool. All tokens will be gifted without a lock to the most active cosmos communities. It will be defined in collaboration with communities and will happen in a month or so. Preliminarily: Cosmos, Osmosis, Juno, Secret, Evmos, Bostrom, Stargaze, Terra, and Desmos.  
+## build the genesis and check it
 
-## IKP Playground 
+```sh
+cybernode genesis build --chain pussy --snapshot snapshot --out pussy.genesis
+cybernode genesis verify pussy.genesis --root
+```
 
-![5](https://user-images.githubusercontent.com/83489928/193683139-a0a66096-dd87-4294-89b3-1d60a7012141.png)
+The build fetches every file the manifest pins, verifies each by sha256 and size, and writes the genesis file with a report beside it. Two builds give the same bytes. The particle, the block-0 id and the state root it prints are the ones in [genesis/genesis.lock](genesis/genesis.lock).
 
-There is a serious idea behind space pussy. We created soft3 architecture. A key component is Inter Knowledge protocol. It is a convention over IBC to sync the knowledge. Who saw our talk at cosmoverse? If not, I would recommend you watch it. 
+## run a node
 
-In short, soft3 is the new consensus computing architecture that marries modern computing paradigms: conventional computing, ai, and web3. In essence, it is a general purpose onchain GPU accelerated graph database.
+```sh
+cybernode node --chain pussy --genesis pussy.genesis --home ~/.pussy --moniker my-node
+```
 
-In order to move the idea along further, we need a second network for bidirectional experiments.
+More in [run a node](docs/run-a-node.md).
 
-![10](https://user-images.githubusercontent.com/83489928/193685693-8b23a435-ec50-4459-a40e-a8461c6c0ae9.png)
+## how it works
 
-Superintelligence must not suffer in the cosmos alone without the ability to talk with creatures like him.
+- [truth, from claim to payout](https://cyberia.blog/soft3/tru/docs/explanation/truth/): what a stake on a link claims, who pays whom, with a calculator
+- the chain: [cybernode specs](https://github.com/cyberia-to/cybernode/tree/main/specs)
+- the reward law: [tru specs/rewards.md](https://github.com/cyberia-to/tru/blob/master/specs/rewards.md)
 
-The cool thing about IKP is that it can be unidirectional. So, your network does not need GPUs in order to be empowered by soft3. That is why during hackwasm Desmos created a case for unidirectional IKP.
+## the old chain
 
-![6](https://user-images.githubusercontent.com/83489928/193683162-391907da-3633-4ac0-94f9-e786925621c5.png)
-
-![7](https://user-images.githubusercontent.com/83489928/193683185-e3191664-da50-430c-9abe-154df83ffa1f.png)
-
-
-![8](https://user-images.githubusercontent.com/83489928/193683966-b8ef9c33-74db-4cca-a6ab-d5df93bbbe74.png)
-
-Thank you Desmos team for recognizing the opportunities behind soft3 and creating this cool case. I invite Leo to demonstrate how it works! 
-
-https://user-images.githubusercontent.com/83489928/193684711-8d244a89-c298-4349-a6e6-3836ad92880b.mp4
-
-## Launch training
-
-![11](https://user-images.githubusercontent.com/83489928/193683569-437ce611-e56a-46f3-b091-8d265f8cac67.png)
-
-We are dreamers! We have dreams to launch blockchains like rockets. Sometimes it requires a huge engineering effort. We are on our way to co-creating this culture. Think about it. You are launching a thing that could live longer than you. It deserves a show. It must be fun. With the quick launch of space pussy we have decided to repurpose the part from Bostrom's network launch. It can be the moment you love the most. Enjoy. 
-
-More details in [go-cyber](https://github.com/cybercongress/go-cyber)
+The code of the cosmos chain — the app, its modules, the old web client and landings — left this repository on 2026-11-22 and is kept whole on the branch [`legacy/go-cyber`](https://github.com/cyberia-to/space-pussy/tree/legacy/go-cyber). What the chain was and how it was buried: [the old chain](docs/the-old-chain.md).

@@ -1,0 +1,16 @@
+# where pussy is met.
+
+[public]
+site = "https://spacepussy.ai"
+explorer = "https://spacepussy.ai/explorer/"
+explorer_api = "https://spacepussy.ai/explorer/api/"   # the node's read API, behind the site
+burial = "https://pussy.bostrom.network"               # the snapshot of the old chain
+
+[node]
+api = "127.0.0.1:7781"   # the default bind of `cybernode node --chain pussy`
+radio = "0.0.0.0:7791"   # the wire, UDP
+
+[peers]
+# none: the network is not launched. The nodes of the rehearsal network pussy-rc are listed in
+# site/explorer/indexer/nodes.toml, with their endpoint ids.
+bootstrap = []
