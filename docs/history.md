@@ -15,9 +15,9 @@ space-pussy was first a cosmos chain: the second network built on go-cyber, besi
 
 It mirrored bostrom's structure of four tokens. The supply at genesis was one exa PUSSY: 18 heroes received 0.1 % each, and the rest stood in a community pool meant as gifts to the most active cosmos communities ([why spacepussy](why-spacepussy.md)).
 
-The names are the burial's, as [`snapshot/holdings.py`](../snapshot/holdings.py) labels the denoms it carries.
+The names are the burial's, as [`snapshot/holdings.py`](../snapshot/holdings.py) labels the tokens it carries.
 
-| token | denom | role |
+| token | its name on the old chain | role |
 |---|---|---|
 | PUSSY | `pussy` | consensus and governance |
 | LP | `liquidpussy` | the liquid form of staked PUSSY |

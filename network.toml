@@ -9,7 +9,7 @@
 [network]
 name = "pussy"
 hrp = "pussy"                    # the prefix of a legacy address
-denom = "pussy"                  # the native coin
+token = "pussy"                  # the native token
 genesis_time = 1793885820        # 2026-11-05T13:37:00Z, the time pinned for the first attempt; the launch is by
                                  # readiness, and a new time rebuilds the genesis file and its lock
 
